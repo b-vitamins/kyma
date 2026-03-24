@@ -241,7 +241,7 @@ def train_3060_pilot(prepared: PreparedPilotRun) -> dict[str, Any]:
     )
     LOGGER.info("Wrote pilot summary to %s", summary_path)
 
-    model = KymaAutoregressiveLM(prepared.model_config)
+    model = KymaAutoregressiveLM(prepared.model_config).to(device)
     initial_metrics = evaluate_language_model(
         model,
         prepared.val_dataset,

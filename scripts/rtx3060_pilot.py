@@ -5,9 +5,53 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from kyma.pilot import (
+if TYPE_CHECKING:
+    from kyma.pilot import PreparedPilotRun  # pyright: ignore[reportUnusedImport]
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_pilot_symbols() -> tuple[
+    Path,
+    Path,
+    Path,
+    Path,
+    Callable[..., dict[str, Any]],
+    Callable[..., PreparedPilotRun],
+    Callable[[PreparedPilotRun], dict[str, Any]],
+    Callable[..., Path],
+]:
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from kyma.pilot import (
+        DEFAULT_3060_CACHE_PATH,
+        DEFAULT_3060_MODEL_CONFIG_PATH,
+        DEFAULT_3060_OUTPUT_DIR,
+        DEFAULT_3060_TRAINING_CONFIG_PATH,
+        build_3060_pilot_cache,
+        prepare_3060_pilot_run,
+        train_3060_pilot,
+        write_3060_pilot_summary,
+    )
+
+    return (
+        DEFAULT_3060_CACHE_PATH,
+        DEFAULT_3060_MODEL_CONFIG_PATH,
+        DEFAULT_3060_OUTPUT_DIR,
+        DEFAULT_3060_TRAINING_CONFIG_PATH,
+        build_3060_pilot_cache,
+        prepare_3060_pilot_run,
+        train_3060_pilot,
+        write_3060_pilot_summary,
+    )
+
+
+(
     DEFAULT_3060_CACHE_PATH,
     DEFAULT_3060_MODEL_CONFIG_PATH,
     DEFAULT_3060_OUTPUT_DIR,
@@ -16,7 +60,7 @@ from kyma.pilot import (
     prepare_3060_pilot_run,
     train_3060_pilot,
     write_3060_pilot_summary,
-)
+) = _load_pilot_symbols()
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -96,13 +140,14 @@ def main() -> None:
     )
 
     if args.command == "plan":
+        payload: dict[str, object] = {"summary": prepared.summary.to_dict()}
         if args.write_summary:
             summary_path = write_3060_pilot_summary(
                 prepared.summary,
                 output_dir=Path(args.output_dir),
             )
-            print(json.dumps({"summary_path": str(summary_path)}, indent=2))
-        print(json.dumps(prepared.summary.to_dict(), indent=2, sort_keys=True))
+            payload["summary_path"] = str(summary_path)
+        print(json.dumps(payload, indent=2, sort_keys=True))
         return
 
     if args.command == "train":

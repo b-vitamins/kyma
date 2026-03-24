@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -32,24 +34,9 @@ def _write_config(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def test_prepare_3060_pilot_run_builds_train_and_val_datasets(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cache_path = tmp_path / "pieces.jsonl"
-    save_piece_cache(
-        [
-            _make_piece("a", 1),
-            _make_piece("b", 3),
-            _make_piece("c", 5),
-            _make_piece("d", 7),
-        ],
-        cache_path,
-    )
-
-    model_config_path = tmp_path / "model.json"
+def _write_minimal_model_config(path: Path) -> None:
     _write_config(
-        model_config_path,
+        path,
         {
             "d_model": 16,
             "n_layers": 2,
@@ -85,9 +72,10 @@ def test_prepare_3060_pilot_run_builds_train_and_val_datasets(
         },
     )
 
-    training_config_path = tmp_path / "training.json"
+
+def _write_minimal_training_config(path: Path) -> None:
     _write_config(
-        training_config_path,
+        path,
         {
             "batch_size": 1,
             "max_steps": 2,
@@ -110,6 +98,28 @@ def test_prepare_3060_pilot_run_builds_train_and_val_datasets(
             },
         },
     )
+
+
+def test_prepare_3060_pilot_run_builds_train_and_val_datasets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_path = tmp_path / "pieces.jsonl"
+    save_piece_cache(
+        [
+            _make_piece("a", 1),
+            _make_piece("b", 3),
+            _make_piece("c", 5),
+            _make_piece("d", 7),
+        ],
+        cache_path,
+    )
+
+    model_config_path = tmp_path / "model.json"
+    _write_minimal_model_config(model_config_path)
+
+    training_config_path = tmp_path / "training.json"
+    _write_minimal_training_config(training_config_path)
 
     class FakeTokenizer:
         pad_id = 2
@@ -163,3 +173,48 @@ def test_write_3060_pilot_summary_persists_json(tmp_path: Path) -> None:
 
     assert output_path.is_file()
     assert json.loads(output_path.read_text(encoding="utf-8"))["pad_id"] == 2
+
+
+def test_rtx3060_pilot_script_plan_emits_single_json_document(
+    tmp_path: Path,
+) -> None:
+    cache_path = tmp_path / "pieces.jsonl"
+    save_piece_cache(
+        [
+            _make_piece("a", 1),
+            _make_piece("b", 3),
+            _make_piece("c", 5),
+            _make_piece("d", 7),
+        ],
+        cache_path,
+    )
+
+    model_config_path = tmp_path / "model.json"
+    training_config_path = tmp_path / "training.json"
+    _write_minimal_model_config(model_config_path)
+    _write_minimal_training_config(training_config_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/rtx3060_pilot.py",
+            "plan",
+            "--cache-path",
+            str(cache_path),
+            "--model-config-path",
+            str(model_config_path),
+            "--training-config-path",
+            str(training_config_path),
+            "--output-dir",
+            str(tmp_path / "run"),
+            "--write-summary",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert "summary" in payload
+    assert "summary_path" in payload
