@@ -22,3 +22,11 @@ def test_todo_contains_milestones() -> None:
     todo = (ROOT / "TODO.md").read_text(encoding="utf-8")
     assert "M01" in todo
     assert "M12" in todo
+
+
+def test_gitignore_covers_local_dataset_and_artifact_caches() -> None:
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "artifacts/" in gitignore
+    assert "/data/" in gitignore or "data/" in gitignore
+    assert "*.tar.gz" in gitignore
+    assert "*.part" in gitignore

@@ -38,3 +38,10 @@ def test_training_config_commands_work() -> None:
     payload = json.loads(print_result.stdout)
     assert payload["batch_size"] == 8
     assert payload["schedule"]["warmup_steps"] == 2000
+
+
+def test_download_aria_midi_dry_run_emits_plan() -> None:
+    result = _run_cli("download-aria-midi", "--dry-run")
+    payload = json.loads(result.stdout)
+    assert payload["subset"] == "pruned"
+    assert payload["archive_path"].endswith("aria-midi-v1-pruned-ext.tar.gz")

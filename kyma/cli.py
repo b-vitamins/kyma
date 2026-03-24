@@ -13,6 +13,7 @@ from kyma.config import (
     load_model_config,
     load_training_config,
 )
+from kyma.data import download_aria_midi
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -26,6 +27,31 @@ def _build_parser() -> argparse.ArgumentParser:
     print_parser = subparsers.add_parser("print-config")
     print_parser.add_argument("kind", choices=config_kinds)
     print_parser.add_argument("name")
+
+    download_parser = subparsers.add_parser("download-aria-midi")
+    download_parser.add_argument(
+        "--subset",
+        choices=("full", "pruned", "deduped", "unique"),
+        default="pruned",
+    )
+    download_parser.add_argument(
+        "--root",
+        default="artifacts/data/aria-midi",
+    )
+    download_parser.add_argument(
+        "--accept-license",
+        action="store_true",
+        help="acknowledge the CC-BY-NC-SA 4.0 license and upstream disclaimer",
+    )
+    download_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+    )
+    download_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the resolved download plan without fetching files",
+    )
 
     return parser
 
@@ -52,6 +78,17 @@ def main() -> None:
         else:
             config = load_training_config(args.name)
         print(json.dumps(config, indent=2, sort_keys=True))
+        return
+
+    if args.command == "download-aria-midi":
+        manifest = download_aria_midi(
+            subset=args.subset,
+            root=args.root,
+            accept_license=args.accept_license,
+            overwrite=args.overwrite,
+            dry_run=args.dry_run,
+        )
+        print(json.dumps(manifest, indent=2, sort_keys=True))
         return
 
     raise ValueError(f"Unsupported command: {args.command}")

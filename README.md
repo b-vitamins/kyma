@@ -27,6 +27,10 @@ Workflow documentation is split by surface:
 - [`docs/evaluation.md`](./docs/evaluation.md)
 - [`docs/inference.md`](./docs/inference.md)
 
+The Aria-MIDI local-cache workflow is documented in
+[`docs/data-prep.md`](./docs/data-prep.md). Downloaded archives and derived
+artifacts live under ignored paths such as `artifacts/data/aria-midi/`.
+
 ## Development
 
 The local quality gate is intentionally strict:

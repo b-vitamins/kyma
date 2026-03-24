@@ -9,6 +9,8 @@ commit messages for milestone commits.
 
 ### Added
 
+- A typed Aria-MIDI downloader with subset metadata, resumable local caching, manifest writing, and a CLI entrypoint
+- Tests covering Aria-MIDI download planning, license acknowledgement, mocked file fetches, and CLI dry runs
 - Initial project charter and milestone plan
 - Repository standards, milestone ledger, changelog discipline, and developer operating instructions
 - Packaging, linting, typing, testing, and pre-commit gate configuration

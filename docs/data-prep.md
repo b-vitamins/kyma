@@ -3,6 +3,42 @@
 Kyma’s data layer works on tokenized pieces with explicit time features. The
 current workflow is Python-first rather than CLI-first.
 
+## Downloading Aria-MIDI Locally
+
+Kyma now includes a downloader for the public Aria-MIDI release hosted at
+`loubb/aria-midi` on Hugging Face. The default subset is `pruned`, which is the
+recommended starting point for foundation-model pretraining.
+
+The default local cache root is:
+
+```text
+artifacts/data/aria-midi/
+```
+
+That path is already ignored by git, so downloaded archives, manifests, and
+future derived caches do not enter version control.
+
+Dry-run the resolved plan:
+
+```bash
+python3 -m kyma.cli download-aria-midi --dry-run
+```
+
+Trigger the actual download after reviewing the upstream dataset card,
+disclaimer, and `CC-BY-NC-SA 4.0` license:
+
+```bash
+python3 -m kyma.cli download-aria-midi --subset pruned --accept-license
+```
+
+The downloader stores:
+
+- the subset tarball
+- the upstream dataset README
+- the upstream disclaimer
+- the relevant preprocess JSON when one exists
+- a local `manifest.json`
+
 ## From Aria-Style JSONL
 
 If you already have an Aria-style JSONL dataset of `MidiDict` records:
