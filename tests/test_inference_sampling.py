@@ -16,6 +16,7 @@ from kyma.inference import (
 )
 from kyma.model import (
     KymaAutoregressiveLM,
+    KymaBackendConfig,
     KymaEvalDifferentiators,
     KymaLMState,
     KymaLongContextConfig,
@@ -158,6 +159,7 @@ def _build_config() -> KymaModelConfig:
         dropout_p=0.0,
         ffn_mult=2,
         max_segment_len=8,
+        backends=KymaBackendConfig(scan_backend="reference"),
         time_conditioning=KymaTimeConditioningConfig(
             learned_positional_embedding=False,
             delta_time_features=True,

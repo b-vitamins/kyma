@@ -10,6 +10,9 @@
   "dropout_p": 0.0,
   "ffn_mult": 4,
   "max_segment_len": 4096,
+  "backends": {
+    "scan_backend": "reference"
+  },
   "time_conditioning": {
     "learned_positional_embedding": false,
     "delta_time_features": true,

@@ -8,6 +8,7 @@ from torch import nn
 
 from kyma.model import (
     KymaAutoregressiveLM,
+    KymaBackendConfig,
     KymaEvalDifferentiators,
     KymaLMState,
     KymaLongContextConfig,
@@ -83,6 +84,7 @@ def _build_config(*, learned_positional_embedding: bool = False) -> KymaModelCon
         dropout_p=0.0,
         ffn_mult=2,
         max_segment_len=4,
+        backends=KymaBackendConfig(scan_backend="reference"),
         time_conditioning=KymaTimeConditioningConfig(
             learned_positional_embedding=learned_positional_embedding,
             delta_time_features=True,
@@ -182,3 +184,34 @@ def test_state_object_supports_detach_and_device_transfer() -> None:
     assert all(
         isinstance(layer_state, FakeMixerState) for layer_state in moved.layer_states
     )
+
+
+def test_cute_scan_backend_rejected_for_state_carry_training() -> None:
+    with pytest.raises(
+        ValueError,
+        match="state_carry_training requires a stateful scan backend",
+    ):
+        KymaModelConfig(
+            d_model=16,
+            n_layers=2,
+            d_state=8,
+            expand=2,
+            d_head=8,
+            d_conv=4,
+            chunk_size=8,
+            vocab_size=32,
+            dropout_p=0.0,
+            ffn_mult=2,
+            max_segment_len=4,
+            backends=KymaBackendConfig(scan_backend="cute"),
+            time_conditioning=KymaTimeConditioningConfig(
+                learned_positional_embedding=False,
+                delta_time_features=True,
+                absolute_time_features=True,
+                beat_phase_features=True,
+                tempo_features=True,
+                feature_mlp_dim=12,
+            ),
+            long_context=KymaLongContextConfig(state_carry_training=True),
+            differentiators=KymaEvalDifferentiators(),
+        )

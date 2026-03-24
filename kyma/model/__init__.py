@@ -1,6 +1,7 @@
 """Model surfaces for Kyma."""
 
 from kyma.model.config import (
+    KymaBackendConfig,
     KymaEvalDifferentiators,
     KymaLongContextConfig,
     KymaModelConfig,
@@ -17,6 +18,7 @@ from kyma.model.lm import (
 
 __all__ = [
     "KymaAutoregressiveLM",
+    "KymaBackendConfig",
     "KymaEvalDifferentiators",
     "KymaLMState",
     "KymaLongContextConfig",

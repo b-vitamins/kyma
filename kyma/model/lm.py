@@ -55,6 +55,12 @@ def build_slinoss_mixer(config: KymaModelConfig) -> nn.Module:
         ) from exc
 
     mixer_cls = layers_module.SLinOSSMixer
+    scan_backend_name = config.backends.scan_backend
+    scan_backend_cls = {
+        "auto": layers_module.AutoScanBackend,
+        "reference": layers_module.ReferenceScanBackend,
+        "cute": layers_module.CuteScanBackend,
+    }[scan_backend_name]
     return mixer_cls(
         config.d_model,
         d_state=config.d_state,
@@ -63,6 +69,7 @@ def build_slinoss_mixer(config: KymaModelConfig) -> nn.Module:
         d_conv=config.d_conv,
         chunk_size=config.chunk_size,
         normalize_bc=True,
+        backend=scan_backend_cls(),
     )
 
 

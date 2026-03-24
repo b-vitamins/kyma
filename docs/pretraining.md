@@ -64,6 +64,10 @@ print(bundle.train_state.global_step)
 - The pretraining loop assumes state-carry windows, not shuffled fixed windows.
 - Gradient detaches happen at the TBPTT boundaries specified by the window
   contract.
+- The packaged model config currently defaults to the SLinOSS reference scan
+  backend for state-carry execution on CUDA. That keeps training and evaluation
+  compatible with today's stateful backend surface until stateful CuTe scan
+  execution lands upstream.
 - `max_steps` counts optimizer updates. Use `grad_accum_steps` to increase the
   effective batch size without forcing the microbatch to fit directly in GPU
   memory.

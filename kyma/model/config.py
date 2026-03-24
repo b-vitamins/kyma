@@ -86,6 +86,24 @@ class KymaEvalDifferentiators:
 
 
 @dataclass(frozen=True)
+class KymaBackendConfig:
+    """Backend selections for SLinOSS integration points."""
+
+    scan_backend: str = "reference"
+
+    def __post_init__(self) -> None:
+        if self.scan_backend not in {"auto", "reference", "cute"}:
+            raise ValueError("scan_backend must be one of: auto, reference, cute.")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> KymaBackendConfig:
+        return cls(scan_backend=str(data.get("scan_backend", "reference")))
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class KymaModelConfig:
     """Top-level configuration for a Kyma language model."""
 
@@ -100,6 +118,7 @@ class KymaModelConfig:
     dropout_p: float
     ffn_mult: int
     max_segment_len: int
+    backends: KymaBackendConfig
     time_conditioning: KymaTimeConditioningConfig
     long_context: KymaLongContextConfig
     differentiators: KymaEvalDifferentiators
@@ -121,6 +140,14 @@ class KymaModelConfig:
                 raise ValueError(f"{field_name} must be positive.")
         if not 0.0 <= self.dropout_p < 1.0:
             raise ValueError("dropout_p must be in the range [0, 1).")
+        if (
+            self.long_context.state_carry_training
+            and self.backends.scan_backend == "cute"
+        ):
+            raise ValueError(
+                "state_carry_training requires a stateful scan backend. "
+                "Use scan_backend='reference' or 'auto'."
+            )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> KymaModelConfig:
@@ -136,6 +163,7 @@ class KymaModelConfig:
             dropout_p=float(data["dropout_p"]),
             ffn_mult=int(data.get("ffn_mult", 4)),
             max_segment_len=int(data["max_segment_len"]),
+            backends=KymaBackendConfig.from_dict(data.get("backends", {})),
             time_conditioning=KymaTimeConditioningConfig.from_dict(
                 data["time_conditioning"]
             ),
@@ -145,6 +173,7 @@ class KymaModelConfig:
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
+        data["backends"] = self.backends.to_dict()
         data["time_conditioning"] = self.time_conditioning.to_dict()
         data["long_context"] = self.long_context.to_dict()
         data["differentiators"] = self.differentiators.to_dict()

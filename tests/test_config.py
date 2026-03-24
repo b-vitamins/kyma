@@ -19,6 +19,7 @@ def test_packaged_model_config_loads_and_roundtrips() -> None:
 
     assert config.d_model == 512
     assert config.ffn_mult == 4
+    assert config.backends.scan_backend == "reference"
     assert config.long_context.state_carry_training is True
     assert config.time_conditioning.absolute_time_features is True
     assert config.time_conditioning.tempo_features is True
