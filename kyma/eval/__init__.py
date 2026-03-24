@@ -24,6 +24,15 @@ from kyma.eval.short_context import (
     evaluate_short_context_parity,
     slice_short_context_piece,
 )
+from kyma.eval.streaming import (
+    StreamingBucketResult,
+    StreamingEvalSlice,
+    StreamingExampleResult,
+    StreamingReport,
+    estimate_decode_session_bytes,
+    evaluate_streaming,
+    slice_streaming_piece,
+)
 
 __all__ = [
     "KymaEvalProtocol",
@@ -34,7 +43,13 @@ __all__ = [
     "ShortContextParityReport",
     "ShortContextParitySlice",
     "ShortContextParitySpec",
+    "StreamingBucketResult",
+    "StreamingEvalSlice",
     "StreamingEvalSpec",
+    "StreamingExampleResult",
+    "StreamingReport",
+    "estimate_decode_session_bytes",
+    "evaluate_streaming",
     "evaluate_short_context_parity",
     "HorizonNLLPoint",
     "LongHorizonBucketResult",
@@ -44,4 +59,5 @@ __all__ = [
     "evaluate_long_horizon",
     "slice_long_horizon_piece",
     "slice_short_context_piece",
+    "slice_streaming_piece",
 ]

@@ -73,6 +73,9 @@ The evaluation surface is layered on purpose:
 - long-horizon evaluation is expected to report loss by continuation horizon and
   under explicit recurrent-state reset intervals, so state carry is measured
   rather than assumed
+- streaming evaluation is expected to benchmark prompt-prefill latency, steady
+  step throughput, and decode-session memory separately so realtime claims do
+  not collapse into a single opaque score
 
 That keeps the baseline comparable without letting it dominate the overall
 methodology.
