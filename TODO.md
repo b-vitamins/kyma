@@ -6,7 +6,7 @@
 - [x] M04 Add the core SLinOSS-backed autoregressive language model surface for symbolic music
 - [x] M05 Add state-carry pretraining dataset support for contiguous piece training and truncated backpropagation through time
 - [x] M06 Add the main pretraining loop and checkpoint format for Kyma language-model training
-- [ ] M07 Add offline autoregressive sampling and a stateful decode loop designed to adopt future fast CuTe AR kernels
+- [x] M07 Add offline autoregressive sampling and a stateful decode loop designed to adopt future fast CuTe AR kernels
 - [ ] M08 Add short-context parity evaluation against Aria-style prompt continuation
 - [ ] M09 Add long-horizon evaluation for contiguous context carry, horizon-conditioned loss, and long-form continuation analysis
 - [ ] M10 Add streaming systems evaluation for latency, throughput, and memory growth over session length

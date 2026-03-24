@@ -1,9 +1,10 @@
 # Architecture
 
-Kyma is organized around five explicit surfaces:
+Kyma is organized around six explicit surfaces:
 
 - `kyma.data`: tokenization and dataset adapters
 - `kyma.model`: typed configuration and model definitions
+- `kyma.inference`: stateful decode sessions and sampling
 - `kyma.training`: training loops and checkpointing
 - `kyma.eval`: evaluation protocol definitions and runners
 - `kyma.cli`: lightweight repo utilities and future user-facing commands
@@ -45,6 +46,19 @@ fully shuffled fixed windows. The first training loop therefore assumes:
 
 That contract keeps long-form carry behavior explicit at the training level,
 which is necessary for later long-horizon and streaming evaluation.
+
+## Inference Contract
+
+The inference surface is session-based rather than prompt-plus-helper-only. A
+decode session therefore always represents:
+
+- recurrent state after consuming a known prefix
+- logits for the next token after that prefix
+- a stable boundary between prompt prefill and token-by-token advance
+
+That keeps the realtime and future-kernel story straightforward. Faster decode
+backends can replace the internals of prompt prefill and single-step advance
+without changing the public sampling API or the semantics of a running session.
 
 ## Differentiators
 

@@ -27,6 +27,8 @@ commit messages for milestone commits.
 - Typed pretraining configs, a packaged small-model pretraining preset, recurrent-state-aware batch scheduling, and the first end-to-end training loop
 - Checkpoint bundle helpers for model, optimizer, scheduler, and scalar training-state persistence
 - Training tests covering state-carry batching, checkpoint round-trips, evaluation, and a tiny end-to-end pretraining run
+- A dedicated `kyma.inference` surface with decode sessions, batched autoregressive generation, and typed sampling controls
+- Inference tests covering session boundaries, greedy and filtered sampling, and stop-token-aware rectangular generation
 
 ### Changed
 
