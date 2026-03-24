@@ -68,6 +68,14 @@ class AriaMidiDownloadPlan:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class RemoteFileMetadata:
+    """Metadata resolved from an upstream file endpoint."""
+
+    size_bytes: int
+    etag: str | None = None
+
+
 ARIA_MIDI_SUBSETS: dict[str, AriaMidiSubsetSpec] = {
     "full": AriaMidiSubsetSpec(
         subset="full",
@@ -221,6 +229,7 @@ def _download_to_path(
     destination: str | Path,
     *,
     overwrite: bool = False,
+    expected_size_bytes: int | None = None,
 ) -> None:
     destination_path = Path(destination)
     destination_path.parent.mkdir(parents=True, exist_ok=True)
@@ -228,6 +237,15 @@ def _download_to_path(
     existing_size = 0
     if destination_path.exists() and not overwrite:
         existing_size = int(destination_path.stat().st_size)
+        if expected_size_bytes is not None:
+            if existing_size == expected_size_bytes:
+                return
+            if existing_size > expected_size_bytes:
+                raise ValueError(
+                    "Existing file is larger than the expected upstream payload: "
+                    f"{destination_path} ({existing_size} > {expected_size_bytes}). "
+                    "Re-run with overwrite=True."
+                )
     elif overwrite and destination_path.exists():
         destination_path.unlink()
 
@@ -239,6 +257,12 @@ def _download_to_path(
         response = request.urlopen(request.Request(url, headers=headers))
     except error.HTTPError as exc:
         if exc.code == 416 and existing_size > 0 and not overwrite:
+            if expected_size_bytes is not None and existing_size != expected_size_bytes:
+                raise ValueError(
+                    "Existing file does not match the expected upstream size: "
+                    f"{destination_path} ({existing_size} != {expected_size_bytes}). "
+                    "Re-run with overwrite=True."
+                ) from exc
             return
         raise
     status = getattr(response, "status", 200)
@@ -273,8 +297,43 @@ def _download_to_path(
                 handle.write(chunk)
                 progress.update(len(chunk))
 
+    final_size = int(destination_path.stat().st_size)
+    if expected_size_bytes is not None and final_size != expected_size_bytes:
+        raise ValueError(
+            "Downloaded file size does not match the expected upstream size: "
+            f"{destination_path} ({final_size} != {expected_size_bytes}). "
+            "Re-run with overwrite=True."
+        )
 
-def _manifest_payload(plan: AriaMidiDownloadPlan) -> dict[str, Any]:
+
+def _probe_remote_file(url: str) -> RemoteFileMetadata:
+    request_attempts = (
+        request.Request(url, method="HEAD"),
+        request.Request(url, headers={"Range": "bytes=0-0"}),
+    )
+    for req in request_attempts:
+        with request.urlopen(req) as response:
+            content_range = response.headers.get("Content-Range")
+            content_length = response.headers.get("Content-Length")
+            if content_range is not None:
+                size_bytes = int(content_range.rsplit("/", 1)[1])
+            elif content_length is not None:
+                size_bytes = int(content_length)
+            else:
+                continue
+            return RemoteFileMetadata(
+                size_bytes=size_bytes,
+                etag=response.headers.get("ETag"),
+            )
+    raise ValueError(f"Could not resolve upstream file size for {url}")
+
+
+def _manifest_payload(
+    plan: AriaMidiDownloadPlan,
+    *,
+    archive_expected_size_bytes: int | None = None,
+    archive_etag: str | None = None,
+) -> dict[str, Any]:
     archive_path = Path(plan.archive_path)
     payload: dict[str, Any] = {
         "dataset": "aria-midi",
@@ -304,10 +363,50 @@ def _manifest_payload(plan: AriaMidiDownloadPlan) -> dict[str, Any]:
     }
     if archive_path.exists():
         payload["archive_size_bytes"] = int(archive_path.stat().st_size)
+    if archive_expected_size_bytes is not None:
+        payload["archive_expected_size_bytes"] = archive_expected_size_bytes
+    if archive_etag is not None:
+        payload["archive_etag"] = archive_etag
     if plan.preprocess_path is not None and plan.preprocess_url is not None:
         payload["paths"]["preprocess"] = plan.preprocess_path
         payload["source_urls"]["preprocess"] = plan.preprocess_url
     return payload
+
+
+def _load_manifest(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _resolve_expected_archive_size(plan: AriaMidiDownloadPlan) -> int | None:
+    manifest = _load_manifest(Path(plan.manifest_path))
+    if manifest is None:
+        return None
+    expected_size = manifest.get("archive_expected_size_bytes")
+    if isinstance(expected_size, int):
+        return expected_size
+    try:
+        return _probe_remote_file(plan.archive_url).size_bytes
+    except Exception:
+        return None
+
+
+def _validate_local_archive(
+    plan: AriaMidiDownloadPlan,
+    *,
+    archive_path: Path,
+) -> None:
+    expected_size = _resolve_expected_archive_size(plan)
+    if expected_size is None:
+        return
+    actual_size = int(archive_path.stat().st_size)
+    if actual_size != expected_size:
+        raise ValueError(
+            "Local Aria-MIDI archive is incomplete or stale: "
+            f"{archive_path} ({actual_size} != {expected_size}). "
+            "Re-run download-aria-midi with --overwrite."
+        )
 
 
 def _safe_extract_tar(archive: tarfile.TarFile, destination: Path) -> None:
@@ -331,6 +430,8 @@ def extract_aria_midi_archive(
     archive_path = resolve_aria_midi_archive_path(subset=subset, root=root)
     if not archive_path.is_file():
         raise FileNotFoundError(f"Aria-MIDI archive not found: {archive_path}")
+    plan = build_aria_midi_download_plan(subset=subset, root=root)
+    _validate_local_archive(plan, archive_path=archive_path)
 
     extract_root = (
         resolve_aria_midi_extract_root(subset=subset, root=root)
@@ -366,8 +467,14 @@ def extract_aria_midi_archive(
             return manifest
 
     extract_root.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive_path, mode="r:gz") as archive:
-        _safe_extract_tar(archive, extract_root)
+    try:
+        with tarfile.open(archive_path, mode="r:gz") as archive:
+            _safe_extract_tar(archive, extract_root)
+    except (tarfile.TarError, EOFError) as exc:
+        raise ValueError(
+            f"Aria-MIDI archive appears incomplete or corrupt: {archive_path}. "
+            "Re-run download-aria-midi with --overwrite."
+        ) from exc
 
     manifest = {
         "dataset": "aria-midi",
@@ -501,6 +608,7 @@ def download_aria_midi(
 
     root_path = Path(plan.root)
     root_path.mkdir(parents=True, exist_ok=True)
+    archive_metadata = _probe_remote_file(plan.archive_url)
     _download_to_path(plan.disclaimer_url, plan.disclaimer_path, overwrite=overwrite)
     _download_to_path(plan.readme_url, plan.readme_path, overwrite=overwrite)
     if plan.preprocess_url is not None and plan.preprocess_path is not None:
@@ -509,9 +617,18 @@ def download_aria_midi(
             plan.preprocess_path,
             overwrite=overwrite,
         )
-    _download_to_path(plan.archive_url, plan.archive_path, overwrite=overwrite)
+    _download_to_path(
+        plan.archive_url,
+        plan.archive_path,
+        overwrite=overwrite,
+        expected_size_bytes=archive_metadata.size_bytes,
+    )
 
-    manifest = _manifest_payload(plan)
+    manifest = _manifest_payload(
+        plan,
+        archive_expected_size_bytes=archive_metadata.size_bytes,
+        archive_etag=archive_metadata.etag,
+    )
     Path(plan.manifest_path).write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

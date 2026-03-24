@@ -48,6 +48,7 @@ commit messages for milestone commits.
 ### Changed
 
 - Bound `pyright`, `ruff`, `pytest`, and the make targets to the repo-local `.venv` contract instead of falling through to ambient tools
+- Hardened the Aria-MIDI downloader and extractor to record upstream archive metadata, reject partial archives, and fail with an explicit recovery path instead of surfacing raw tar/gzip EOF errors
 - Tightened the training checkpoint contract so disabled gradient scalers serialize as `None` rather than empty state payloads
 - Expanded the README to reflect the actual project thesis
 - Scoped data-directory ignore rules to repo-root artifacts so package modules remain trackable

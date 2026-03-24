@@ -39,6 +39,10 @@ The downloader stores:
 - the relevant preprocess JSON when one exists
 - a local `manifest.json`
 
+The manifest records the upstream archive size. If a download is interrupted or
+otherwise truncated, Kyma will refuse to extract it and will ask you to rerun
+the download with `--overwrite`.
+
 ## Extracting The Archive
 
 The downloaded archive can be extracted into the ignored cache tree with:
