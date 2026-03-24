@@ -30,6 +30,22 @@ The state-carry training surface slices pieces into contiguous windows with:
 - burn-in-aware loss masks
 - padded time-feature tensors that stay aligned with token ids
 
+## Training Contract
+
+The pretraining surface is built around contiguous piece streams rather than
+fully shuffled fixed windows. The first training loop therefore assumes:
+
+- stream-aligned batching that keeps active batch rows attached to a piece until
+  that piece runs out of windows
+- recurrent-state resets only when a slot switches pieces or becomes inactive
+- truncated backpropagation through time boundaries that detach gradients
+  without discarding recurrent state
+- a checkpoint bundle that preserves the model weights, typed model/training
+  configs, optimizer state, scheduler state, and scalar training progress
+
+That contract keeps long-form carry behavior explicit at the training level,
+which is necessary for later long-horizon and streaming evaluation.
+
 ## Differentiators
 
 Kyma is obligated to remain aligned with three technical claims:

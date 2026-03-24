@@ -24,6 +24,9 @@ commit messages for milestone commits.
 - Contiguous piece windowing, typed state-carry training windows, and a flat dataset surface for TBPTT-style pretraining
 - Tests covering burn-in masking, detach boundaries, truncation, and window collation
 - A dedicated install guide covering the reference wheel path and the CUDA wheel path for `slinoss`
+- Typed pretraining configs, a packaged small-model pretraining preset, recurrent-state-aware batch scheduling, and the first end-to-end training loop
+- Checkpoint bundle helpers for model, optimizer, scheduler, and scalar training-state persistence
+- Training tests covering state-carry batching, checkpoint round-trips, evaluation, and a tiny end-to-end pretraining run
 
 ### Changed
 
@@ -31,3 +34,4 @@ commit messages for milestone commits.
 - Scoped data-directory ignore rules to repo-root artifacts so package modules remain trackable
 - Strengthened the model config schema with feedforward width, absolute-time conditioning, and validation hooks
 - Switched the `slinoss` dependency to the published release wheel contract and aligned the PyTorch pin with that release surface
+- Expanded the packaged-config surface and CLI to cover training presets in addition to model and evaluation configs

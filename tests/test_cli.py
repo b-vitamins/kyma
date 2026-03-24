@@ -28,3 +28,13 @@ def test_print_config_command_emits_json() -> None:
     payload = json.loads(result.stdout)
     assert "streaming" in payload
     assert payload["rhythm"]["report_tempo_consistency"] is True
+
+
+def test_training_config_commands_work() -> None:
+    list_result = _run_cli("list-configs", "training")
+    assert "kyma-small-pretrain" in list_result.stdout
+
+    print_result = _run_cli("print-config", "training", "kyma-small-pretrain")
+    payload = json.loads(print_result.stdout)
+    assert payload["batch_size"] == 8
+    assert payload["schedule"]["warmup_steps"] == 2000

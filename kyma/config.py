@@ -30,6 +30,12 @@ def load_eval_config(name: str) -> dict[str, Any]:
     return _load_config(f"eval/{name}.json")
 
 
+def load_training_config(name: str) -> dict[str, Any]:
+    """Load a packaged training configuration by name."""
+
+    return _load_config(f"training/{name}.json")
+
+
 def _config_name(path: Traversable) -> str:
     filename = os.path.basename(str(path))
     return filename[: -len(".json")]
@@ -52,4 +58,15 @@ def list_eval_configs() -> list[str]:
     eval_dir = _CONFIG_ROOT.joinpath("eval")
     return sorted(
         _config_name(path) for path in eval_dir.iterdir() if str(path).endswith(".json")
+    )
+
+
+def list_training_configs() -> list[str]:
+    """Return packaged training configuration names."""
+
+    training_dir = _CONFIG_ROOT.joinpath("training")
+    return sorted(
+        _config_name(path)
+        for path in training_dir.iterdir()
+        if str(path).endswith(".json")
     )

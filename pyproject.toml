@@ -34,7 +34,7 @@ kyma = "kyma.cli:main"
 include = ["kyma*"]
 
 [tool.setuptools.package-data]
-kyma = ["configs/model/*.json", "configs/eval/*.json"]
+kyma = ["configs/model/*.json", "configs/eval/*.json", "configs/training/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

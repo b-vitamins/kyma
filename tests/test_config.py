@@ -3,11 +3,14 @@ from __future__ import annotations
 from kyma.config import (
     list_eval_configs,
     list_model_configs,
+    list_training_configs,
     load_eval_config,
     load_model_config,
+    load_training_config,
 )
 from kyma.eval import KymaEvalProtocol
 from kyma.model import KymaModelConfig
+from kyma.training import KymaPretrainConfig
 
 
 def test_packaged_model_config_loads_and_roundtrips() -> None:
@@ -32,6 +35,17 @@ def test_packaged_eval_protocol_loads_and_roundtrips() -> None:
     assert protocol.to_dict() == raw
 
 
+def test_packaged_training_config_loads_and_roundtrips() -> None:
+    raw = load_training_config("kyma-small-pretrain")
+    config = KymaPretrainConfig.from_dict(raw)
+
+    assert config.batch_size == 8
+    assert config.device == "cuda"
+    assert config.schedule.warmup_steps == 2000
+    assert config.to_dict() == raw
+
+
 def test_config_lists_include_packaged_defaults() -> None:
     assert "kyma-small" in list_model_configs()
     assert "default" in list_eval_configs()
+    assert "kyma-small-pretrain" in list_training_configs()
