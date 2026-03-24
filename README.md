@@ -17,6 +17,9 @@ Kyma consumes the published `slinoss` release artifacts rather than a source
 checkout so the dependency contract stays aligned with the package release
 pipeline.
 
+Installation guidance, including the CUDA wheel path, is documented in
+[`docs/install.md`](./docs/install.md).
+
 ## Development
 
 The local quality gate is intentionally strict:

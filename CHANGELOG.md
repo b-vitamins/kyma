@@ -23,6 +23,7 @@ commit messages for milestone commits.
 - Model tests covering time-feature validation, state handling, learned-position limits, and step-vs-forward consistency
 - Contiguous piece windowing, typed state-carry training windows, and a flat dataset surface for TBPTT-style pretraining
 - Tests covering burn-in masking, detach boundaries, truncation, and window collation
+- A dedicated install guide covering the reference wheel path and the CUDA wheel path for `slinoss`
 
 ### Changed
 
