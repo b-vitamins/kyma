@@ -13,6 +13,10 @@ The repository is being built in milestone order. The live milestone ledger is
 tracked in [`TODO.md`](./TODO.md), and the running release notes live in
 [`CHANGELOG.md`](./CHANGELOG.md).
 
+Kyma consumes the published `slinoss` release artifacts rather than a source
+checkout so the dependency contract stays aligned with the package release
+pipeline.
+
 ## Development
 
 The local quality gate is intentionally strict:

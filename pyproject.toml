@@ -12,12 +12,12 @@ license = { text = "Apache-2.0" }
 authors = [{ name = "B", email = "b@example.com" }]
 dependencies = [
   "numpy>=1.26",
-  "torch>=2.3,<2.11",
+  "torch==2.10.0",
   "tqdm>=4.66",
   "jsonlines>=4.0",
   "safetensors>=0.4.5",
   "ariautils @ git+https://github.com/EleutherAI/aria-utils.git",
-  "slinoss @ git+https://github.com/b-vitamins/slinoss.git@v0.1.1",
+  "slinoss @ https://github.com/b-vitamins/slinoss/releases/download/v0.1.1/slinoss-0.1.1-py3-none-any.whl",
 ]
 
 [project.optional-dependencies]

@@ -29,3 +29,4 @@ commit messages for milestone commits.
 - Expanded the README to reflect the actual project thesis
 - Scoped data-directory ignore rules to repo-root artifacts so package modules remain trackable
 - Strengthened the model config schema with feedforward width, absolute-time conditioning, and validation hooks
+- Switched the `slinoss` dependency to the published release wheel contract and aligned the PyTorch pin with that release surface
