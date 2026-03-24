@@ -70,6 +70,9 @@ The evaluation surface is layered on purpose:
   actual project differentiators directly
 - prompt slicing is driven by real-time token features rather than raw token
   counts so baseline evaluations already respect musical time
+- long-horizon evaluation is expected to report loss by continuation horizon and
+  under explicit recurrent-state reset intervals, so state carry is measured
+  rather than assumed
 
 That keeps the baseline comparable without letting it dominate the overall
 methodology.

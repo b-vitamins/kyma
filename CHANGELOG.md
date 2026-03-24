@@ -31,6 +31,8 @@ commit messages for milestone commits.
 - Inference tests covering session boundaries, greedy and filtered sampling, and stop-token-aware rectangular generation
 - A short-context parity evaluation runner with explicit prompt slicing, teacher-forced continuation NLL, and optional sampled continuations
 - Evaluation tests covering prompt extraction, slice skipping, and deterministic short-context reports
+- A long-horizon evaluation runner with real-time prompt/continuation slicing, horizon-conditioned NLL, and state-carry reset-interval ablations
+- Long-horizon evaluation tests covering real-time slice extraction and reset-sensitive continuation loss
 
 ### Changed
 
