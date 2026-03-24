@@ -17,7 +17,10 @@ commit messages for milestone commits.
 - Typed model and evaluation protocol configuration surfaces with packaged JSON defaults
 - Basic CLI utilities for listing and printing packaged configurations
 - Architecture documentation and configuration-focused tests
+- Piece-level data adapters for Aria-compatible tokenization, canonical encoded piece records, and tempo-map-aware token timing features
+- Focused tests for tempo maps, timing-feature extraction, and MIDI-to-piece tokenization
 
 ### Changed
 
 - Expanded the README to reflect the actual project thesis
+- Scoped data-directory ignore rules to repo-root artifacts so package modules remain trackable

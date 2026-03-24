@@ -24,9 +24,9 @@ logs/
 runs/
 
 # Data
-data/
-datasets/
-cache/
+/data/
+/datasets/
+/cache/
 *.jsonl
 *.safetensors
 *.pt

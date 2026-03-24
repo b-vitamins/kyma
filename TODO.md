@@ -2,7 +2,7 @@
 
 - [x] M01 Establish repository standards, tooling, changelog discipline, and the full pre-commit gate
 - [x] M02 Create the package skeleton and project-wide configuration surface
-- [ ] M03 Add tokenizer and MIDI dataset adapters that preserve Aria comparability without inheriting Aria's layout wholesale
+- [x] M03 Add tokenizer and MIDI dataset adapters that preserve Aria comparability without inheriting Aria's layout wholesale
 - [ ] M04 Add the core SLinOSS-backed autoregressive language model surface for symbolic music
 - [ ] M05 Add state-carry pretraining dataset support for contiguous piece training and truncated backpropagation through time
 - [ ] M06 Add the main pretraining loop and checkpoint format for Kyma language-model training

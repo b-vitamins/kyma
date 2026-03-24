@@ -11,6 +11,18 @@ Kyma is organized around five explicit surfaces:
 The project keeps Aria compatibility where it improves comparability, but it
 does not inherit Aria's evaluation scope or transformer-centric assumptions.
 
+## Data Contract
+
+The data layer works at the piece level first. Canonical encoded pieces carry:
+
+- the original token sequence
+- the encoded token ids
+- a dense per-token timing feature tensor
+- a per-feature validity mask
+
+That keeps time-aware modeling explicit and lets later state-carry windowing
+operate on contiguous pieces without losing the timing side channel.
+
 ## Differentiators
 
 Kyma is obligated to remain aligned with three technical claims:
