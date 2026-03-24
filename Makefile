@@ -1,16 +1,18 @@
 .PHONY: format lint typecheck test pre-commit
 
+VENV_BIN := .venv/bin
+
 format:
-	ruff format .
+	$(VENV_BIN)/ruff format .
 
 lint:
-	ruff check .
+	$(VENV_BIN)/ruff check .
 
 typecheck:
-	pyright
+	$(VENV_BIN)/pyright
 
 test:
-	pytest
+	$(VENV_BIN)/pytest
 
 pre-commit:
 	bash scripts/pre-commit.sh

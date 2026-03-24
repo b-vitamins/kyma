@@ -9,14 +9,29 @@ pipeline.
 For a Python 3.11 environment with the universal `slinoss` wheel:
 
 ```bash
-python -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+scripts/bootstrap-venv.sh
 ```
 
-This follows the universal wheel contract used in
+The bootstrap script recreates `.venv`, upgrades the local packaging tooling,
+and installs Kyma plus the developer extras as a non-editable local virtualenv
+environment. On workstations that already expose the matching `torch==2.10.0`
+runtime in the system Python, the script reuses that runtime and installs the
+rest of Kyma's dependencies locally to avoid re-downloading multi-gigabyte CUDA
+wheels. If no compatible system torch is present, it falls back to the full
+local dependency install. This follows the universal wheel contract used in
 [pyproject.toml](/home/b/projects/kyma/pyproject.toml).
+
+If GitHub is unavailable but you have a local non-editable source checkout or
+wheel, the bootstrap script also accepts:
+
+```bash
+KYMA_ARIAUTILS_SOURCE=/abs/path/to/ariautils-src \
+KYMA_SLINOSS_WHEEL=/abs/path/to/slinoss.whl \
+scripts/bootstrap-venv.sh
+```
+
+It will also automatically prefer an ignored local source cache at
+`artifacts/vendor/ariautils-src/` when present.
 
 ## CUDA Install
 
@@ -39,16 +54,22 @@ python -m pip install \
   "pytest>=9" \
   "ruff>=0.9.5" \
   "pyright>=1.1.403"
-python -m pip install -e . --no-deps
+python -m pip install .
 ```
 
-That keeps Kyma editable while preserving the release-wheel install path for the
-backend package.
+That keeps all dependencies isolated to the local virtualenv without relying on
+editable installs.
 
 ## Notes
 
 - Replace `v0.1.1` / `0.1.1` with a newer `slinoss` release when Kyma upgrades.
 - Pick the wheel whose Python and platform tags match your environment.
+- Run local source-tree commands through the venv interpreter, for example:
+
+```bash
+.venv/bin/python -m kyma.cli list-configs model
+```
+
 - The strict local quality gate remains:
 
 ```bash

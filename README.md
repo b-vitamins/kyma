@@ -19,6 +19,8 @@ pipeline.
 
 Installation guidance, including the CUDA wheel path, is documented in
 [`docs/install.md`](./docs/install.md).
+The default developer workflow uses a repo-local `.venv` and non-editable
+installs.
 
 Workflow documentation is split by surface:
 

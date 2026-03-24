@@ -1,9 +1,8 @@
 {
-  "include": [
-    "kyma",
-    "tests"
-  ],
-  "pythonVersion": "3.11",
-  "typeCheckingMode": "strict",
-  "reportMissingTypeStubs": false
+    "include": ["kyma", "tests"],
+    "venvPath": ".",
+    "venv": ".venv",
+    "pythonVersion": "3.11",
+    "typeCheckingMode": "strict",
+    "reportMissingTypeStubs": false,
 }
