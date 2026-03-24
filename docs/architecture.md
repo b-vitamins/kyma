@@ -23,6 +23,13 @@ The data layer works at the piece level first. Canonical encoded pieces carry:
 That keeps time-aware modeling explicit and lets later state-carry windowing
 operate on contiguous pieces without losing the timing side channel.
 
+The state-carry training surface slices pieces into contiguous windows with:
+
+- explicit piece-start and piece-end markers
+- carry and detach flags for recurrent-state management
+- burn-in-aware loss masks
+- padded time-feature tensors that stay aligned with token ids
+
 ## Differentiators
 
 Kyma is obligated to remain aligned with three technical claims:

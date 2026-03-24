@@ -21,6 +21,8 @@ commit messages for milestone commits.
 - Focused tests for tempo maps, timing-feature extraction, and MIDI-to-piece tokenization
 - A stateful Kyma language model surface with SLinOSS-compatible mixer blocks, structured time conditioning, and recurrent decode state
 - Model tests covering time-feature validation, state handling, learned-position limits, and step-vs-forward consistency
+- Contiguous piece windowing, typed state-carry training windows, and a flat dataset surface for TBPTT-style pretraining
+- Tests covering burn-in masking, detach boundaries, truncation, and window collation
 
 ### Changed
 
