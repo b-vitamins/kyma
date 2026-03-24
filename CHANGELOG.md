@@ -9,6 +9,7 @@ commit messages for milestone commits.
 
 ### Added
 
+- A branch-local RTX 3060 pilot runner with bounded cache building, deterministic train/validation planning, and a capped launch surface
 - A repo-local virtualenv bootstrap script with local source overrides and system-runtime fallbacks for workstation-specific dependency quirks
 - Mixed-precision, gradient-accumulation, and checkpointed-scaler controls for the main Kyma pretraining loop
 - Piece-cache serialization, raw Aria-MIDI archive extraction, and CLI entrypoints for building tokenized local training caches

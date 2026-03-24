@@ -1,0 +1,33 @@
+{
+  "d_model": 512,
+  "n_layers": 6,
+  "d_state": 128,
+  "expand": 2,
+  "d_head": 64,
+  "d_conv": 4,
+  "chunk_size": 128,
+  "vocab_size": 17727,
+  "dropout_p": 0.0,
+  "ffn_mult": 4,
+  "max_segment_len": 4096,
+  "time_conditioning": {
+    "learned_positional_embedding": false,
+    "delta_time_features": true,
+    "absolute_time_features": true,
+    "beat_phase_features": true,
+    "tempo_features": true,
+    "feature_mlp_dim": 128
+  },
+  "long_context": {
+    "state_carry_training": true,
+    "chunk_size_tokens": 512,
+    "burn_in_tokens": 64,
+    "tbptt_window_tokens": 2048,
+    "max_piece_tokens": 16384
+  },
+  "differentiators": {
+    "long_form_stateful_generation": true,
+    "real_time_interactive_continuation": true,
+    "rhythm_aware_modeling": true
+  }
+}

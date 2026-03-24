@@ -15,3 +15,4 @@
 - [x] M13 Add mixed-precision, gradient accumulation, and memory-aware controls to the pretraining stack
 - [x] M14 Add a raw Aria-MIDI extraction and tokenized piece-cache build path for real dataset runs
 - [x] M15 Prefer a repo-local `.venv` workflow and non-editable installs for Kyma development
+- [x] M16 Prepare the RTX 3060 pilot branch configs, cache builder, and launch runner

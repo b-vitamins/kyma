@@ -1,0 +1,21 @@
+{
+  "batch_size": 1,
+  "max_steps": 5000,
+  "grad_accum_steps": 16,
+  "precision": "fp16",
+  "grad_clip_norm": 1.0,
+  "log_every_steps": 20,
+  "checkpoint_every_steps": 250,
+  "device": "cuda",
+  "optimizer": {
+    "lr": 0.0002,
+    "weight_decay": 0.1,
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "eps": 1e-08
+  },
+  "schedule": {
+    "warmup_steps": 250,
+    "min_lr_scale": 0.1
+  }
+}
