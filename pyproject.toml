@@ -33,6 +33,9 @@ kyma = "kyma.cli:main"
 [tool.setuptools.packages.find]
 include = ["kyma*"]
 
+[tool.setuptools.package-data]
+kyma = ["configs/model/*.json", "configs/eval/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
@@ -54,4 +57,3 @@ select = [
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
-

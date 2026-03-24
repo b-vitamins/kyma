@@ -1,0 +1,27 @@
+{
+  "short_context_parity": {
+    "prompt_durations_s": [15, 30],
+    "continuation_tokens": 2048,
+    "temperature": 0.95,
+    "min_p": 0.03
+  },
+  "long_horizon": {
+    "prompt_lengths_s": [15, 60, 180],
+    "continuation_lengths_s": [30, 120, 300],
+    "state_carry_reset_intervals": [0, 512, 1024],
+    "report_horizon_nll": true,
+    "report_structure_metrics": true
+  },
+  "streaming": {
+    "interactive_session_lengths_s": [30, 120, 600],
+    "report_time_to_first_note_ms": true,
+    "report_decode_throughput": true,
+    "report_memory_growth": true
+  },
+  "rhythm": {
+    "report_onset_nll": true,
+    "report_duration_nll": true,
+    "report_tempo_consistency": true,
+    "report_beat_phase_consistency": true
+  }
+}
