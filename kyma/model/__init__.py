@@ -6,10 +6,24 @@ from kyma.model.config import (
     KymaModelConfig,
     KymaTimeConditioningConfig,
 )
+from kyma.model.lm import (
+    KymaAutoregressiveLM,
+    KymaLMState,
+    KymaMixerBlock,
+    KymaTimeConditioner,
+    MixerFactory,
+    build_slinoss_mixer,
+)
 
 __all__ = [
+    "KymaAutoregressiveLM",
     "KymaEvalDifferentiators",
+    "KymaLMState",
     "KymaLongContextConfig",
+    "KymaMixerBlock",
     "KymaModelConfig",
     "KymaTimeConditioningConfig",
+    "KymaTimeConditioner",
+    "MixerFactory",
+    "build_slinoss_mixer",
 ]

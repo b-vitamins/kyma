@@ -19,8 +19,11 @@ commit messages for milestone commits.
 - Architecture documentation and configuration-focused tests
 - Piece-level data adapters for Aria-compatible tokenization, canonical encoded piece records, and tempo-map-aware token timing features
 - Focused tests for tempo maps, timing-feature extraction, and MIDI-to-piece tokenization
+- A stateful Kyma language model surface with SLinOSS-compatible mixer blocks, structured time conditioning, and recurrent decode state
+- Model tests covering time-feature validation, state handling, learned-position limits, and step-vs-forward consistency
 
 ### Changed
 
 - Expanded the README to reflect the actual project thesis
 - Scoped data-directory ignore rules to repo-root artifacts so package modules remain trackable
+- Strengthened the model config schema with feedforward width, absolute-time conditioning, and validation hooks

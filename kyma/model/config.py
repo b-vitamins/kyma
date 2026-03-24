@@ -12,9 +12,14 @@ class KymaTimeConditioningConfig:
 
     learned_positional_embedding: bool = False
     delta_time_features: bool = True
+    absolute_time_features: bool = True
     beat_phase_features: bool = True
     tempo_features: bool = True
     feature_mlp_dim: int = 128
+
+    def __post_init__(self) -> None:
+        if self.feature_mlp_dim <= 0:
+            raise ValueError("feature_mlp_dim must be positive.")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> KymaTimeConditioningConfig:
@@ -22,6 +27,18 @@ class KymaTimeConditioningConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    def selected_feature_names(self) -> tuple[str, ...]:
+        names: list[str] = []
+        if self.delta_time_features:
+            names.append("delta_time_ms")
+        if self.absolute_time_features:
+            names.append("absolute_time_ms")
+        if self.beat_phase_features:
+            names.append("beat_phase")
+        if self.tempo_features:
+            names.append("tempo_bpm")
+        return tuple(names)
 
 
 @dataclass(frozen=True)
@@ -33,6 +50,16 @@ class KymaLongContextConfig:
     burn_in_tokens: int = 128
     tbptt_window_tokens: int = 1024
     max_piece_tokens: int = 32768
+
+    def __post_init__(self) -> None:
+        if self.chunk_size_tokens <= 0:
+            raise ValueError("chunk_size_tokens must be positive.")
+        if self.burn_in_tokens < 0:
+            raise ValueError("burn_in_tokens must be non-negative.")
+        if self.tbptt_window_tokens <= 0:
+            raise ValueError("tbptt_window_tokens must be positive.")
+        if self.max_piece_tokens <= 0:
+            raise ValueError("max_piece_tokens must be positive.")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> KymaLongContextConfig:
@@ -71,10 +98,29 @@ class KymaModelConfig:
     chunk_size: int
     vocab_size: int
     dropout_p: float
+    ffn_mult: int
     max_segment_len: int
     time_conditioning: KymaTimeConditioningConfig
     long_context: KymaLongContextConfig
     differentiators: KymaEvalDifferentiators
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "d_model",
+            "n_layers",
+            "d_state",
+            "expand",
+            "d_head",
+            "d_conv",
+            "chunk_size",
+            "vocab_size",
+            "ffn_mult",
+            "max_segment_len",
+        ):
+            if int(getattr(self, field_name)) <= 0:
+                raise ValueError(f"{field_name} must be positive.")
+        if not 0.0 <= self.dropout_p < 1.0:
+            raise ValueError("dropout_p must be in the range [0, 1).")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> KymaModelConfig:
@@ -88,6 +134,7 @@ class KymaModelConfig:
             chunk_size=int(data["chunk_size"]),
             vocab_size=int(data["vocab_size"]),
             dropout_p=float(data["dropout_p"]),
+            ffn_mult=int(data.get("ffn_mult", 4)),
             max_segment_len=int(data["max_segment_len"]),
             time_conditioning=KymaTimeConditioningConfig.from_dict(
                 data["time_conditioning"]

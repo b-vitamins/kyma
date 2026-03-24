@@ -15,7 +15,9 @@ def test_packaged_model_config_loads_and_roundtrips() -> None:
     config = KymaModelConfig.from_dict(raw)
 
     assert config.d_model == 512
+    assert config.ffn_mult == 4
     assert config.long_context.state_carry_training is True
+    assert config.time_conditioning.absolute_time_features is True
     assert config.time_conditioning.tempo_features is True
     assert config.to_dict() == raw
 
