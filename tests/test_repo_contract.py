@@ -38,3 +38,10 @@ def test_pre_commit_prefers_local_venv_tools() -> None:
     script = (ROOT / "scripts" / "pre-commit.sh").read_text(encoding="utf-8")
     assert ".venv" in script
     assert "bootstrap-venv.sh" in script
+
+
+def test_bootstrap_tracks_cuda_runtime_dependencies() -> None:
+    script = (ROOT / "scripts" / "bootstrap-venv.sh").read_text(encoding="utf-8")
+    assert "nvidia-cutlass-dsl==4.4.2" in script
+    assert "cuda-python==12.9.4" in script
+    assert "slinoss-0.1.1-cp311-cp311-linux_x86_64.whl" in script

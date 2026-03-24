@@ -6,7 +6,7 @@ pipeline.
 
 ## CPU / Reference Install
 
-For a Python 3.11 environment with the universal `slinoss` wheel:
+For the default repo-local install:
 
 ```bash
 scripts/bootstrap-venv.sh
@@ -17,9 +17,12 @@ and installs Kyma plus the developer extras as a non-editable local virtualenv
 environment. On workstations that already expose the matching `torch==2.10.0`
 runtime in the system Python, the script reuses that runtime and installs the
 rest of Kyma's dependencies locally to avoid re-downloading multi-gigabyte CUDA
-wheels. If no compatible system torch is present, it falls back to the full
-local dependency install. This follows the universal wheel contract used in
-[pyproject.toml](/home/b/projects/kyma/pyproject.toml).
+wheels. On Linux `x86_64` with Python 3.11 and `nvidia-smi` available, the
+bootstrap script now prefers the published `slinoss` CUDA wheel and also
+installs the matching local `nvidia-cutlass-dsl` and `cuda-python` runtime
+dependencies. If no compatible system torch is present, it falls back to the
+full local dependency install and then reapplies the resolved `ariautils` /
+`slinoss` wheel sources.
 
 If GitHub is unavailable but you have a local non-editable source checkout or
 wheel, the bootstrap script also accepts:
@@ -31,7 +34,9 @@ scripts/bootstrap-venv.sh
 ```
 
 It will also automatically prefer an ignored local source cache at
-`artifacts/vendor/ariautils-src/` when present.
+`artifacts/vendor/ariautils-src/` when present. Setting
+`KYMA_SLINOSS_WHEEL` also overrides the bootstrap script's default CUDA-wheel
+preference on supported GPU workstations.
 
 ## CUDA Install
 
