@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kyma"
+version = "0.1.0"
+description = "Stateful symbolic-music language modeling with the SLinOSS SSM architecture."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "B", email = "b@example.com" }]
+dependencies = [
+  "numpy>=1.26",
+  "torch>=2.3,<2.11",
+  "tqdm>=4.66",
+  "jsonlines>=4.0",
+  "safetensors>=0.4.5",
+  "ariautils @ git+https://github.com/EleutherAI/aria-utils.git",
+  "slinoss @ git+https://github.com/b-vitamins/slinoss.git@v0.1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9",
+  "ruff>=0.9.5",
+  "pyright>=1.1.403",
+]
+
+[project.scripts]
+kyma = "kyma.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["kyma*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "UP",
+  "B",
+  "SIM",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
