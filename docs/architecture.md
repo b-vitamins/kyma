@@ -60,6 +60,20 @@ That keeps the realtime and future-kernel story straightforward. Faster decode
 backends can replace the internals of prompt prefill and single-step advance
 without changing the public sampling API or the semantics of a running session.
 
+## Evaluation Contract
+
+The evaluation surface is layered on purpose:
+
+- short-context parity acts as the baseline track and keeps continuation
+  comparisons grounded in prompt-conditioned generation
+- later long-horizon, streaming, and rhythm tracks are expected to measure the
+  actual project differentiators directly
+- prompt slicing is driven by real-time token features rather than raw token
+  counts so baseline evaluations already respect musical time
+
+That keeps the baseline comparable without letting it dominate the overall
+methodology.
+
 ## Differentiators
 
 Kyma is obligated to remain aligned with three technical claims:

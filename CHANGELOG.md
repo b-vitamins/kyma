@@ -29,6 +29,8 @@ commit messages for milestone commits.
 - Training tests covering state-carry batching, checkpoint round-trips, evaluation, and a tiny end-to-end pretraining run
 - A dedicated `kyma.inference` surface with decode sessions, batched autoregressive generation, and typed sampling controls
 - Inference tests covering session boundaries, greedy and filtered sampling, and stop-token-aware rectangular generation
+- A short-context parity evaluation runner with explicit prompt slicing, teacher-forced continuation NLL, and optional sampled continuations
+- Evaluation tests covering prompt extraction, slice skipping, and deterministic short-context reports
 
 ### Changed
 
