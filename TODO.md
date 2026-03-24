@@ -12,6 +12,6 @@
 - [x] M10 Add streaming systems evaluation for latency, throughput, and memory growth over session length
 - [x] M11 Add rhythm-aware evaluation for onset, duration, tempo, and beat-phase consistency
 - [x] M12 Add documentation and example workflows for data preparation, pretraining, evaluation, and inference
-- [ ] M13 Add mixed-precision, gradient accumulation, and memory-aware controls to the pretraining stack
+- [x] M13 Add mixed-precision, gradient accumulation, and memory-aware controls to the pretraining stack
 - [ ] M14 Add a raw Aria-MIDI extraction and tokenized piece-cache build path for real dataset runs
 - [x] M15 Prefer a repo-local `.venv` workflow and non-editable installs for Kyma development

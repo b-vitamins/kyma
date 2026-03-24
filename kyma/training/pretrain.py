@@ -5,9 +5,10 @@ from __future__ import annotations
 import math
 from collections import deque
 from collections.abc import Iterator
+from contextlib import nullcontext
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import torch
 from torch.nn import functional as F
@@ -32,6 +33,24 @@ class KymaTrainMetrics:
     loss: float
     valid_tokens: int
     learning_rate: float
+
+
+class GradScalerLike(Protocol):
+    """Minimal gradient-scaler surface used by the pretraining loop."""
+
+    def is_enabled(self) -> bool: ...
+
+    def scale(self, outputs: torch.Tensor) -> torch.Tensor: ...
+
+    def unscale_(self, optimizer: torch.optim.Optimizer) -> None: ...
+
+    def step(self, optimizer: torch.optim.Optimizer) -> Any: ...
+
+    def update(self) -> None: ...
+
+    def state_dict(self) -> dict[str, Any]: ...
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None: ...
 
 
 def build_optimizer(
@@ -309,6 +328,57 @@ def _zero_state(
     )
 
 
+def _autocast_context(
+    *,
+    device: torch.device,
+    precision: str,
+):
+    if precision == "fp32":
+        return nullcontext()
+    if device.type != "cuda":
+        raise ValueError("Mixed precision is only supported on CUDA devices.")
+    dtype = torch.float16 if precision == "fp16" else torch.bfloat16
+    return torch.autocast(device_type=device.type, dtype=dtype)
+
+
+def _build_grad_scaler(
+    *,
+    device: torch.device,
+    precision: str,
+) -> GradScalerLike:
+    amp_module = cast(Any, torch.amp)
+    grad_scaler_cls = amp_module.GradScaler
+    return grad_scaler_cls(
+        "cuda", enabled=device.type == "cuda" and precision == "fp16"
+    )
+
+
+def _optimizer_step(
+    *,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.LRScheduler,
+    scaler: GradScalerLike,
+    model: torch.nn.Module,
+    grad_clip_norm: float | None,
+) -> None:
+    if scaler.is_enabled():
+        if grad_clip_norm is not None:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+        scaler.step(optimizer)
+        scaler.update()
+    else:
+        if grad_clip_norm is not None:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+        optimizer.step()
+    scheduler.step()
+    optimizer.zero_grad(set_to_none=True)
+
+
+def _backward(loss: torch.Tensor) -> None:
+    torch.autograd.backward(loss)
+
+
 def compute_language_model_loss(
     *,
     logits: torch.Tensor,
@@ -336,6 +406,7 @@ def evaluate_language_model(
     *,
     batch_size: int,
     device: str | torch.device,
+    precision: str = "fp32",
 ) -> KymaTrainMetrics:
     """Run the pretraining objective without gradient updates."""
 
@@ -355,21 +426,22 @@ def evaluate_language_model(
         keep_mask = batch["carry_from_previous"] & batch["active_mask"]
         fresh_state = _zero_state(model, batch_size=batch_size, device=resolved_device)
         state = merge_state_rows(state, fresh_state, keep_mask=keep_mask)
-        logits, next_state = cast(
-            tuple[torch.Tensor, KymaLMState],
-            model(
-                batch["input_ids"],
-                time_features=batch["time_features"],
-                time_feature_mask=batch["time_feature_mask"],
-                state=state,
-                return_state=True,
-            ),
-        )
-        loss, valid_tokens = compute_language_model_loss(
-            logits=logits,
-            target_ids=batch["target_ids"],
-            loss_mask=batch["loss_mask"],
-        )
+        with _autocast_context(device=resolved_device, precision=precision):
+            logits, next_state = cast(
+                tuple[torch.Tensor, KymaLMState],
+                model(
+                    batch["input_ids"],
+                    time_features=batch["time_features"],
+                    time_feature_mask=batch["time_feature_mask"],
+                    state=state,
+                    return_state=True,
+                ),
+            )
+            loss, valid_tokens = compute_language_model_loss(
+                logits=logits,
+                target_ids=batch["target_ids"],
+                loss_mask=batch["loss_mask"],
+            )
         total_loss += float(loss) * valid_tokens
         total_tokens += valid_tokens
 
@@ -427,11 +499,18 @@ def train_language_model(
         batch_size=pretrain_config.batch_size,
         device=resolved_device,
     )
+    scaler = _build_grad_scaler(
+        device=resolved_device,
+        precision=pretrain_config.precision,
+    )
+    optimizer.zero_grad(set_to_none=True)
 
-    step = 0
-    while step < pretrain_config.max_steps:
+    global_step = 0
+    optimizer_steps = 0
+    micro_steps_since_update = 0
+    while optimizer_steps < pretrain_config.max_steps:
         for batch in batcher:
-            if step >= pretrain_config.max_steps:
+            if optimizer_steps >= pretrain_config.max_steps:
                 break
 
             batch = _move_batch_to_device(batch, resolved_device)
@@ -443,35 +522,36 @@ def train_language_model(
             )
             state = merge_state_rows(state, fresh_state, keep_mask=keep_mask)
 
-            optimizer.zero_grad(set_to_none=True)
-            logits, next_state = cast(
-                tuple[torch.Tensor, KymaLMState],
-                model(
-                    batch["input_ids"],
-                    time_features=batch["time_features"],
-                    time_feature_mask=batch["time_feature_mask"],
-                    state=state,
-                    return_state=True,
-                ),
-            )
-            loss, valid_tokens = compute_language_model_loss(
-                logits=logits,
-                target_ids=batch["target_ids"],
-                loss_mask=batch["loss_mask"],
-            )
-            torch.autograd.backward(loss)
-
-            if pretrain_config.grad_clip_norm is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    model.parameters(),
-                    pretrain_config.grad_clip_norm,
+            with _autocast_context(
+                device=resolved_device,
+                precision=pretrain_config.precision,
+            ):
+                logits, next_state = cast(
+                    tuple[torch.Tensor, KymaLMState],
+                    model(
+                        batch["input_ids"],
+                        time_features=batch["time_features"],
+                        time_feature_mask=batch["time_feature_mask"],
+                        state=state,
+                        return_state=True,
+                    ),
                 )
-            optimizer.step()
-            scheduler.step()
-            step += 1
+                loss, valid_tokens = compute_language_model_loss(
+                    logits=logits,
+                    target_ids=batch["target_ids"],
+                    loss_mask=batch["loss_mask"],
+                )
+            scaled_loss = loss / float(pretrain_config.grad_accum_steps)
+            if scaler.is_enabled():
+                scaled = scaler.scale(scaled_loss)
+                _backward(scaled)
+            else:
+                _backward(scaled_loss)
+            global_step += 1
+            micro_steps_since_update += 1
             train_state = KymaTrainState(
-                global_step=step,
-                optimizer_steps=step,
+                global_step=global_step,
+                optimizer_steps=optimizer_steps,
                 tokens_processed=train_state.tokens_processed + valid_tokens,
             )
 
@@ -483,12 +563,61 @@ def train_language_model(
             detach_mask = batch["detach_state_after"] | (~batch["active_mask"])
             state = detach_state_rows(active_state, detach_mask=detach_mask)
 
+            if micro_steps_since_update >= pretrain_config.grad_accum_steps:
+                _optimizer_step(
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    scaler=scaler,
+                    model=model,
+                    grad_clip_norm=pretrain_config.grad_clip_norm,
+                )
+                optimizer_steps += 1
+                micro_steps_since_update = 0
+                train_state = KymaTrainState(
+                    global_step=global_step,
+                    optimizer_steps=optimizer_steps,
+                    tokens_processed=train_state.tokens_processed,
+                )
+
+                if (
+                    checkpoint_dir is not None
+                    and pretrain_config.checkpoint_every_steps is not None
+                    and optimizer_steps % pretrain_config.checkpoint_every_steps == 0
+                ):
+                    checkpoint_path = Path(checkpoint_dir) / f"step{optimizer_steps}.pt"
+                    save_pretrain_checkpoint(
+                        checkpoint_path,
+                        model=model,
+                        model_config=model_config,
+                        pretrain_config=pretrain_config,
+                        train_state=train_state,
+                        optimizer=optimizer,
+                        scheduler=scheduler,
+                        scaler=scaler,
+                    )
+
+        if micro_steps_since_update > 0 and optimizer_steps < pretrain_config.max_steps:
+            _optimizer_step(
+                optimizer=optimizer,
+                scheduler=scheduler,
+                scaler=scaler,
+                model=model,
+                grad_clip_norm=pretrain_config.grad_clip_norm,
+            )
+            optimizer_steps += 1
+            micro_steps_since_update = 0
+            train_state = KymaTrainState(
+                global_step=global_step,
+                optimizer_steps=optimizer_steps,
+                tokens_processed=train_state.tokens_processed,
+            )
+
             if (
                 checkpoint_dir is not None
                 and pretrain_config.checkpoint_every_steps is not None
-                and step % pretrain_config.checkpoint_every_steps == 0
+                and optimizer_steps % pretrain_config.checkpoint_every_steps == 0
             ):
-                checkpoint_path = Path(checkpoint_dir) / f"step{step}.pt"
+                checkpoint_path = Path(checkpoint_dir) / f"step{optimizer_steps}.pt"
                 save_pretrain_checkpoint(
                     checkpoint_path,
                     model=model,
@@ -497,9 +626,10 @@ def train_language_model(
                     train_state=train_state,
                     optimizer=optimizer,
                     scheduler=scheduler,
+                    scaler=scaler,
                 )
 
-        if step >= pretrain_config.max_steps:
+        if optimizer_steps >= pretrain_config.max_steps:
             break
 
     if checkpoint_dir is not None:
@@ -512,6 +642,7 @@ def train_language_model(
             train_state=train_state,
             optimizer=optimizer,
             scheduler=scheduler,
+            scaler=scaler,
         )
     return train_state
 

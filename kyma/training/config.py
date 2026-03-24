@@ -63,6 +63,8 @@ class KymaPretrainConfig:
 
     batch_size: int
     max_steps: int
+    grad_accum_steps: int = 1
+    precision: str = "fp32"
     grad_clip_norm: float | None = 1.0
     log_every_steps: int = 10
     checkpoint_every_steps: int | None = None
@@ -75,6 +77,10 @@ class KymaPretrainConfig:
             raise ValueError("batch_size must be positive.")
         if self.max_steps <= 0:
             raise ValueError("max_steps must be positive.")
+        if self.grad_accum_steps <= 0:
+            raise ValueError("grad_accum_steps must be positive.")
+        if self.precision not in {"fp32", "fp16", "bf16"}:
+            raise ValueError("precision must be one of: fp32, fp16, bf16.")
         if self.grad_clip_norm is not None and self.grad_clip_norm <= 0.0:
             raise ValueError("grad_clip_norm must be positive when provided.")
         if self.log_every_steps <= 0:
@@ -87,6 +93,8 @@ class KymaPretrainConfig:
         return cls(
             batch_size=int(data["batch_size"]),
             max_steps=int(data["max_steps"]),
+            grad_accum_steps=int(data.get("grad_accum_steps", 1)),
+            precision=str(data.get("precision", "fp32")),
             grad_clip_norm=(
                 None
                 if data.get("grad_clip_norm") is None
@@ -107,6 +115,8 @@ class KymaPretrainConfig:
         return {
             "batch_size": self.batch_size,
             "max_steps": self.max_steps,
+            "grad_accum_steps": self.grad_accum_steps,
+            "precision": self.precision,
             "grad_clip_norm": self.grad_clip_norm,
             "log_every_steps": self.log_every_steps,
             "checkpoint_every_steps": self.checkpoint_every_steps,

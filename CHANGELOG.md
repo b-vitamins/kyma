@@ -10,6 +10,7 @@ commit messages for milestone commits.
 ### Added
 
 - A repo-local virtualenv bootstrap script with local source overrides and system-runtime fallbacks for workstation-specific dependency quirks
+- Mixed-precision, gradient-accumulation, and checkpointed-scaler controls for the main Kyma pretraining loop
 - A typed Aria-MIDI downloader with subset metadata, resumable local caching, manifest writing, and a CLI entrypoint
 - Tests covering Aria-MIDI download planning, license acknowledgement, mocked file fetches, and CLI dry runs
 - Initial project charter and milestone plan
@@ -46,6 +47,7 @@ commit messages for milestone commits.
 ### Changed
 
 - Bound `pyright`, `ruff`, `pytest`, and the make targets to the repo-local `.venv` contract instead of falling through to ambient tools
+- Tightened the training checkpoint contract so disabled gradient scalers serialize as `None` rather than empty state payloads
 - Expanded the README to reflect the actual project thesis
 - Scoped data-directory ignore rules to repo-root artifacts so package modules remain trackable
 - Strengthened the model config schema with feedforward width, absolute-time conditioning, and validation hooks

@@ -64,5 +64,10 @@ print(bundle.train_state.global_step)
 - The pretraining loop assumes state-carry windows, not shuffled fixed windows.
 - Gradient detaches happen at the TBPTT boundaries specified by the window
   contract.
+- `max_steps` counts optimizer updates. Use `grad_accum_steps` to increase the
+  effective batch size without forcing the microbatch to fit directly in GPU
+  memory.
+- `precision` can be set to `fp32`, `fp16`, or `bf16`. Mixed precision is only
+  supported on CUDA devices.
 - The current packaged training preset is intentionally a starting point, not a
   claim that the hyperparameters are final.

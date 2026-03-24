@@ -218,6 +218,36 @@ def test_checkpoint_roundtrip_and_tiny_training_loop(tmp_path: Path) -> None:
     assert bundle.model_config.to_dict() == model_config.to_dict()
     assert bundle.pretrain_config.to_dict() == pretrain_config.to_dict()
     assert bundle.train_state.global_step == 3
+    assert bundle.scaler_state is None
+
+
+def test_training_loop_supports_gradient_accumulation(tmp_path: Path) -> None:
+    model_config = _build_config()
+    model = KymaAutoregressiveLM(model_config, mixer_factory=_fake_mixer_factory)
+    dataset = _build_dataset()
+    pretrain_config = KymaPretrainConfig(
+        batch_size=2,
+        max_steps=2,
+        grad_accum_steps=2,
+        checkpoint_every_steps=1,
+        device="cpu",
+        optimizer=KymaOptimizerConfig(lr=1e-3, weight_decay=0.0),
+        schedule=KymaScheduleConfig(warmup_steps=0, min_lr_scale=0.5),
+    )
+
+    train_state = train_language_model(
+        model,
+        dataset,
+        model_config=model_config,
+        pretrain_config=pretrain_config,
+        checkpoint_dir=tmp_path / "checkpoints",
+    )
+
+    assert train_state.global_step == 3
+    assert train_state.optimizer_steps == 2
+    assert train_state.tokens_processed > 0
+    assert (tmp_path / "checkpoints" / "step1.pt").is_file()
+    assert (tmp_path / "checkpoints" / "step2.pt").is_file()
 
 
 def test_save_pretrain_checkpoint_roundtrips_scalar_state(tmp_path: Path) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import torch
 
@@ -12,6 +12,16 @@ from kyma.model import KymaModelConfig
 from kyma.training.config import KymaPretrainConfig
 
 KYMA_CHECKPOINT_VERSION = 1
+
+
+class GradScalerStateful(Protocol):
+    """Minimal checkpointable gradient-scaler surface."""
+
+    def is_enabled(self) -> bool: ...
+
+    def state_dict(self) -> dict[str, Any]: ...
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -49,6 +59,7 @@ class KymaCheckpointBundle:
     model_state: dict[str, Any]
     optimizer_state: dict[str, Any] | None
     scheduler_state: dict[str, Any] | None
+    scaler_state: dict[str, Any] | None
     extra: dict[str, Any]
 
 
@@ -61,6 +72,7 @@ def save_pretrain_checkpoint(
     train_state: KymaTrainState,
     optimizer: torch.optim.Optimizer | None = None,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
+    scaler: GradScalerStateful | None = None,
     extra: dict[str, Any] | None = None,
 ) -> None:
     """Serialize model, optimizer, and training metadata to a checkpoint file."""
@@ -75,6 +87,9 @@ def save_pretrain_checkpoint(
         "model_state": model.state_dict(),
         "optimizer_state": None if optimizer is None else optimizer.state_dict(),
         "scheduler_state": None if scheduler is None else scheduler.state_dict(),
+        "scaler_state": (
+            None if scaler is None or not scaler.is_enabled() else scaler.state_dict()
+        ),
         "extra": {} if extra is None else dict(extra),
     }
     torch.save(payload, checkpoint_path)
@@ -86,6 +101,7 @@ def load_pretrain_checkpoint(
     model: torch.nn.Module | None = None,
     optimizer: torch.optim.Optimizer | None = None,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
+    scaler: GradScalerStateful | None = None,
     map_location: str | torch.device | None = None,
 ) -> KymaCheckpointBundle:
     """Load a Kyma pretraining checkpoint and optionally restore stateful objects."""
@@ -104,6 +120,9 @@ def load_pretrain_checkpoint(
         optimizer.load_state_dict(payload["optimizer_state"])
     if scheduler is not None and payload["scheduler_state"] is not None:
         scheduler.load_state_dict(payload["scheduler_state"])
+    scaler_state = payload.get("scaler_state")
+    if scaler is not None and scaler_state is not None:
+        scaler.load_state_dict(scaler_state)
 
     return KymaCheckpointBundle(
         format_version=format_version,
@@ -113,11 +132,13 @@ def load_pretrain_checkpoint(
         model_state=payload["model_state"],
         optimizer_state=payload["optimizer_state"],
         scheduler_state=payload["scheduler_state"],
+        scaler_state=scaler_state,
         extra=dict(payload.get("extra", {})),
     )
 
 
 __all__ = [
+    "GradScalerStateful",
     "KYMA_CHECKPOINT_VERSION",
     "KymaCheckpointBundle",
     "KymaTrainState",

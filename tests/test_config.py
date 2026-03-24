@@ -40,6 +40,8 @@ def test_packaged_training_config_loads_and_roundtrips() -> None:
     config = KymaPretrainConfig.from_dict(raw)
 
     assert config.batch_size == 8
+    assert config.grad_accum_steps == 1
+    assert config.precision == "fp32"
     assert config.device == "cuda"
     assert config.schedule.warmup_steps == 2000
     assert config.to_dict() == raw
