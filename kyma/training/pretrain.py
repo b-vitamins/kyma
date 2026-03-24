@@ -168,8 +168,14 @@ def detach_state_rows(state: Any, *, detach_mask: torch.Tensor) -> Any:
     if torch.is_tensor(state):
         if state.ndim == 0 or state.shape[0] != detach_mask.shape[0]:
             return state.detach()
-        mask = _broadcast_mask(detach_mask, state)
-        return torch.where(mask, state.detach(), state)
+        if bool(detach_mask.all().item()):
+            return state.detach()
+        if not bool(detach_mask.any().item()):
+            return state
+        detached = state.detach().clone()
+        keep_mask = ~detach_mask
+        detached[keep_mask] = state[keep_mask]
+        return detached
     if is_dataclass(state):
         values: dict[str, Any] = {
             field.name: detach_state_rows(
@@ -375,8 +381,8 @@ def _optimizer_step(
     optimizer.zero_grad(set_to_none=True)
 
 
-def _backward(loss: torch.Tensor) -> None:
-    torch.autograd.backward(loss)
+def _backward(loss: torch.Tensor, *, retain_graph: bool = False) -> None:
+    torch.autograd.backward(loss, retain_graph=retain_graph)
 
 
 def compute_language_model_loss(
@@ -541,12 +547,15 @@ def train_language_model(
                     target_ids=batch["target_ids"],
                     loss_mask=batch["loss_mask"],
                 )
+            keep_graph_for_state = bool(
+                (batch["active_mask"] & (~batch["detach_state_after"])).any().item()
+            )
             scaled_loss = loss / float(pretrain_config.grad_accum_steps)
             if scaler.is_enabled():
                 scaled = scaler.scale(scaled_loss)
-                _backward(scaled)
+                _backward(scaled, retain_graph=keep_graph_for_state)
             else:
-                _backward(scaled_loss)
+                _backward(scaled_loss, retain_graph=keep_graph_for_state)
             global_step += 1
             micro_steps_since_update += 1
             train_state = KymaTrainState(
@@ -571,6 +580,7 @@ def train_language_model(
                     model=model,
                     grad_clip_norm=pretrain_config.grad_clip_norm,
                 )
+                state = state.detach()
                 optimizer_steps += 1
                 micro_steps_since_update = 0
                 train_state = KymaTrainState(
@@ -604,6 +614,7 @@ def train_language_model(
                 model=model,
                 grad_clip_norm=pretrain_config.grad_clip_norm,
             )
+            state = state.detach()
             optimizer_steps += 1
             micro_steps_since_update = 0
             train_state = KymaTrainState(

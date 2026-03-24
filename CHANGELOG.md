@@ -50,6 +50,7 @@ commit messages for milestone commits.
 - Bound `pyright`, `ruff`, `pytest`, and the make targets to the repo-local `.venv` contract instead of falling through to ambient tools
 - Taught the local bootstrap flow to prefer the published SLinOSS CUDA wheel on supported GPU workstations and to install the matching local `nvidia-cutlass-dsl` / `cuda-python` runtime dependencies
 - Added an explicit SLinOSS scan-backend selection to the model config and defaulted the packaged model to the stateful reference backend for long-context execution on CUDA
+- Fixed the state-carry pretraining loop so multi-chunk TBPTT segments retain their graph only while the recurrent state is reused and then break graph carry across optimizer steps
 - Hardened the Aria-MIDI downloader and extractor to record upstream archive metadata, reject partial archives, and fail with an explicit recovery path instead of surfacing raw tar/gzip EOF errors
 - Tightened the training checkpoint contract so disabled gradient scalers serialize as `None` rather than empty state payloads
 - Expanded the README to reflect the actual project thesis

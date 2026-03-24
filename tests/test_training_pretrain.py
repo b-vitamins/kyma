@@ -26,6 +26,7 @@ from kyma.training import (
     KymaScheduleConfig,
     KymaStateCarryBatcher,
     KymaTrainState,
+    detach_state_rows,
     evaluate_language_model,
     load_pretrain_checkpoint,
     merge_state_rows,
@@ -152,6 +153,23 @@ def _build_dataset() -> KymaStateCarryDataset:
     )
 
 
+def _build_multi_chunk_tbptt_dataset() -> KymaStateCarryDataset:
+    window_spec = KymaWindowSpec(
+        chunk_size_tokens=3,
+        burn_in_tokens=1,
+        tbptt_window_tokens=6,
+        max_piece_tokens=16,
+    )
+    return KymaStateCarryDataset.from_pieces(
+        [
+            _make_piece("piece-a", 8),
+            _make_piece("piece-b", 7),
+        ],
+        window_spec=window_spec,
+        pad_token_id=31,
+    )
+
+
 def test_state_carry_batcher_preserves_piece_continuity() -> None:
     dataset = _build_dataset()
     batcher = KymaStateCarryBatcher(dataset, batch_size=2)
@@ -177,6 +195,26 @@ def test_merge_state_rows_resets_selected_rows() -> None:
     )
 
     assert torch.equal(merged.running, torch.tensor([[5.0], [0.0]]))
+
+
+def test_detach_state_rows_breaks_graph_for_detached_rows() -> None:
+    base = torch.randn((2, 3), dtype=torch.float32, requires_grad=True)
+    state = base * 2.0
+
+    fully_detached = detach_state_rows(
+        state,
+        detach_mask=torch.tensor([True, True], dtype=torch.bool),
+    )
+    assert fully_detached.requires_grad is False
+
+    mixed = detach_state_rows(
+        state,
+        detach_mask=torch.tensor([True, False], dtype=torch.bool),
+    )
+    mixed[1].sum().backward()
+    assert base.grad is not None
+    assert torch.equal(base.grad[0], torch.zeros_like(base.grad[0]))
+    assert torch.count_nonzero(base.grad[1]) > 0
 
 
 def test_checkpoint_roundtrip_and_tiny_training_loop(tmp_path: Path) -> None:
@@ -250,6 +288,33 @@ def test_training_loop_supports_gradient_accumulation(tmp_path: Path) -> None:
     assert train_state.tokens_processed > 0
     assert (tmp_path / "checkpoints" / "step1.pt").is_file()
     assert (tmp_path / "checkpoints" / "step2.pt").is_file()
+
+
+def test_training_loop_handles_multi_chunk_tbptt_segments(tmp_path: Path) -> None:
+    model_config = _build_config()
+    model = KymaAutoregressiveLM(model_config, mixer_factory=_fake_mixer_factory)
+    dataset = _build_multi_chunk_tbptt_dataset()
+    pretrain_config = KymaPretrainConfig(
+        batch_size=2,
+        max_steps=1,
+        grad_accum_steps=4,
+        checkpoint_every_steps=1,
+        device="cpu",
+        optimizer=KymaOptimizerConfig(lr=1e-3, weight_decay=0.0),
+        schedule=KymaScheduleConfig(warmup_steps=0, min_lr_scale=0.5),
+    )
+
+    train_state = train_language_model(
+        model,
+        dataset,
+        model_config=model_config,
+        pretrain_config=pretrain_config,
+        checkpoint_dir=tmp_path / "checkpoints",
+    )
+
+    assert train_state.optimizer_steps == 1
+    assert train_state.global_step >= 2
+    assert train_state.tokens_processed > 0
 
 
 def test_save_pretrain_checkpoint_roundtrips_scalar_state(tmp_path: Path) -> None:
