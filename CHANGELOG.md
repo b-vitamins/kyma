@@ -37,6 +37,8 @@ commit messages for milestone commits.
 - Streaming evaluation tests covering session slicing, decode-session memory accounting, and per-length benchmark reports
 - A rhythm-aware evaluation runner covering onset NLL, duration NLL, tempo-change consistency, and beat-phase-conditioned accuracy
 - Rhythm evaluation tests covering the full deterministic metric surface
+- Workflow documentation for data preparation, pretraining, evaluation, and inference
+- README links for the workflow documentation set
 
 ### Changed
 

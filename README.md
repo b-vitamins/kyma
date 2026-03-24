@@ -20,6 +20,13 @@ pipeline.
 Installation guidance, including the CUDA wheel path, is documented in
 [`docs/install.md`](./docs/install.md).
 
+Workflow documentation is split by surface:
+
+- [`docs/data-prep.md`](./docs/data-prep.md)
+- [`docs/pretraining.md`](./docs/pretraining.md)
+- [`docs/evaluation.md`](./docs/evaluation.md)
+- [`docs/inference.md`](./docs/inference.md)
+
 ## Development
 
 The local quality gate is intentionally strict:
