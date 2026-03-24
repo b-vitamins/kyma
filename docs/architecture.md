@@ -76,6 +76,9 @@ The evaluation surface is layered on purpose:
 - streaming evaluation is expected to benchmark prompt-prefill latency, steady
   step throughput, and decode-session memory separately so realtime claims do
   not collapse into a single opaque score
+- rhythm-aware evaluation is expected to separate onset and duration likelihoods
+  and to score tempo-change and beat-phase-sensitive positions explicitly, so
+  time conditioning is measured at the token level
 
 That keeps the baseline comparable without letting it dominate the overall
 methodology.

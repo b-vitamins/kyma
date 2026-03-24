@@ -35,6 +35,8 @@ commit messages for milestone commits.
 - Long-horizon evaluation tests covering real-time slice extraction and reset-sensitive continuation loss
 - A streaming systems evaluation runner for prompt-prefill latency, token-step throughput, and decode-session memory over session length
 - Streaming evaluation tests covering session slicing, decode-session memory accounting, and per-length benchmark reports
+- A rhythm-aware evaluation runner covering onset NLL, duration NLL, tempo-change consistency, and beat-phase-conditioned accuracy
+- Rhythm evaluation tests covering the full deterministic metric surface
 
 ### Changed
 

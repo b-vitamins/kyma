@@ -16,6 +16,12 @@ from kyma.eval.protocol import (
     ShortContextParitySpec,
     StreamingEvalSpec,
 )
+from kyma.eval.rhythm import (
+    RhythmExampleResult,
+    RhythmMetric,
+    RhythmReport,
+    evaluate_rhythm,
+)
 from kyma.eval.short_context import (
     ShortContextBucketResult,
     ShortContextExampleResult,
@@ -38,6 +44,9 @@ __all__ = [
     "KymaEvalProtocol",
     "LongHorizonEvalSpec",
     "RhythmEvalSpec",
+    "RhythmExampleResult",
+    "RhythmMetric",
+    "RhythmReport",
     "ShortContextBucketResult",
     "ShortContextExampleResult",
     "ShortContextParityReport",
@@ -50,6 +59,7 @@ __all__ = [
     "StreamingReport",
     "estimate_decode_session_bytes",
     "evaluate_streaming",
+    "evaluate_rhythm",
     "evaluate_short_context_parity",
     "HorizonNLLPoint",
     "LongHorizonBucketResult",

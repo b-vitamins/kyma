@@ -10,5 +10,5 @@
 - [x] M08 Add short-context parity evaluation against Aria-style prompt continuation
 - [x] M09 Add long-horizon evaluation for contiguous context carry, horizon-conditioned loss, and long-form continuation analysis
 - [x] M10 Add streaming systems evaluation for latency, throughput, and memory growth over session length
-- [ ] M11 Add rhythm-aware evaluation for onset, duration, tempo, and beat-phase consistency
+- [x] M11 Add rhythm-aware evaluation for onset, duration, tempo, and beat-phase consistency
 - [ ] M12 Add documentation and example workflows for data preparation, pretraining, evaluation, and inference
