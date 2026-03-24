@@ -13,7 +13,11 @@ from kyma.config import (
     load_model_config,
     load_training_config,
 )
-from kyma.data import download_aria_midi
+from kyma.data import (
+    build_aria_midi_piece_cache,
+    download_aria_midi,
+    extract_aria_midi_archive,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -53,6 +57,66 @@ def _build_parser() -> argparse.ArgumentParser:
         help="print the resolved download plan without fetching files",
     )
 
+    extract_parser = subparsers.add_parser("extract-aria-midi")
+    extract_parser.add_argument(
+        "--subset",
+        choices=("full", "pruned", "deduped", "unique"),
+        default="pruned",
+    )
+    extract_parser.add_argument(
+        "--root",
+        default="artifacts/data/aria-midi",
+    )
+    extract_parser.add_argument(
+        "--output-dir",
+        default=None,
+    )
+    extract_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+    )
+
+    cache_parser = subparsers.add_parser("build-aria-midi-piece-cache")
+    cache_parser.add_argument(
+        "--subset",
+        choices=("full", "pruned", "deduped", "unique"),
+        default="pruned",
+    )
+    cache_parser.add_argument(
+        "--root",
+        default="artifacts/data/aria-midi",
+    )
+    cache_parser.add_argument(
+        "--extracted-root",
+        default=None,
+    )
+    cache_parser.add_argument(
+        "--output-path",
+        default=None,
+    )
+    cache_parser.add_argument(
+        "--tokenizer-config-path",
+        default=None,
+    )
+    cache_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+    )
+    cache_parser.add_argument(
+        "--shuffle",
+        action="store_true",
+    )
+    cache_parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=0,
+    )
+    cache_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+    )
+
     return parser
 
 
@@ -87,6 +151,31 @@ def main() -> None:
             accept_license=args.accept_license,
             overwrite=args.overwrite,
             dry_run=args.dry_run,
+        )
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        return
+
+    if args.command == "extract-aria-midi":
+        manifest = extract_aria_midi_archive(
+            subset=args.subset,
+            root=args.root,
+            output_dir=args.output_dir,
+            overwrite=args.overwrite,
+        )
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        return
+
+    if args.command == "build-aria-midi-piece-cache":
+        manifest = build_aria_midi_piece_cache(
+            subset=args.subset,
+            root=args.root,
+            extracted_root=args.extracted_root,
+            output_path=args.output_path,
+            tokenizer_config_path=args.tokenizer_config_path,
+            limit=args.limit,
+            shuffle=args.shuffle,
+            random_seed=args.random_seed,
+            overwrite=args.overwrite,
         )
         print(json.dumps(manifest, indent=2, sort_keys=True))
         return

@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import json
+import tarfile
 from email.message import Message
+from io import BytesIO
 from pathlib import Path
 from urllib import error
 
 import pytest
+import torch
 
 from kyma.data import (
     ARIA_MIDI_DEFAULT_ROOT,
+    KymaTimeFeatures,
+    KymaTokenizedPiece,
     build_aria_midi_download_plan,
+    build_aria_midi_piece_cache,
     download_aria_midi,
+    extract_aria_midi_archive,
+    load_piece_cache,
 )
 
 
@@ -118,3 +126,95 @@ def test_download_to_path_treats_http_416_as_already_complete(
         accept_license=True,
     )
     assert Path(manifest["paths"]["archive"]).read_bytes() == b"complete"
+
+
+def test_extract_aria_midi_archive_unpacks_expected_tree(tmp_path: Path) -> None:
+    archive_path = tmp_path / "pruned" / "aria-midi-v1-pruned-ext.tar.gz"
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with tarfile.open(archive_path, mode="w:gz") as archive:
+        for name, payload in (
+            ("aria-midi-v1-pruned-ext/data/example.mid", b"midi"),
+            ("aria-midi-v1-pruned-ext/metadata.json", b"{}"),
+        ):
+            info = tarfile.TarInfo(name=name)
+            info.size = len(payload)
+            archive.addfile(info, BytesIO(payload))
+
+    manifest = extract_aria_midi_archive(root=tmp_path)
+
+    dataset_root = tmp_path / "pruned" / "extracted" / "aria-midi-v1-pruned-ext"
+    assert manifest["dataset_root"] == str(dataset_root)
+    assert (dataset_root / "data" / "example.mid").is_file()
+    assert (tmp_path / "pruned" / "extract-manifest.json").is_file()
+
+
+def test_build_aria_midi_piece_cache_serializes_tokenized_pieces(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    dataset_root = (
+        tmp_path / "pruned" / "extracted" / "aria-midi-v1-pruned-ext" / "data"
+    )
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    (dataset_root / "good.mid").write_bytes(b"midi")
+    (dataset_root / "bad.mid").write_bytes(b"midi")
+
+    class FakeMidiDict:
+        @classmethod
+        def from_midi(cls, path: str) -> dict[str, str]:
+            return {"path": path}
+
+    def fake_get_abs_tokenizer(*, config_path: str | None = None) -> object:
+        del config_path
+        return object()
+
+    def fake_tokenize_midi_record(
+        midi_dict: dict[str, str],
+        *,
+        tokenizer: object,
+        piece_id: str | None = None,
+        metadata: dict[str, str] | None = None,
+        source_path: str | None = None,
+        tokenize_kwargs: dict[str, object] | None = None,
+    ) -> KymaTokenizedPiece:
+        del tokenizer, metadata, tokenize_kwargs
+        assert piece_id is not None
+        assert source_path is not None
+        if source_path.endswith("bad.mid"):
+            raise ValueError("bad midi")
+        return KymaTokenizedPiece(
+            piece_id=piece_id,
+            tokens=("<S>",),
+            token_ids=torch.tensor([1], dtype=torch.long),
+            time_features=KymaTimeFeatures(
+                values=torch.zeros((1, 4), dtype=torch.float32),
+                valid=torch.ones((1, 4), dtype=torch.bool),
+            ),
+            metadata={"path": midi_dict["path"]},
+            source_path=source_path,
+        )
+
+    monkeypatch.setattr(
+        "kyma.data.aria_midi._load_mididict_class",
+        lambda: FakeMidiDict,
+    )
+    monkeypatch.setattr("kyma.data.aria_midi.get_abs_tokenizer", fake_get_abs_tokenizer)
+    monkeypatch.setattr(
+        "kyma.data.aria_midi.tokenize_midi_record",
+        fake_tokenize_midi_record,
+    )
+
+    manifest = build_aria_midi_piece_cache(
+        root=tmp_path,
+        overwrite=True,
+    )
+
+    cache_path = tmp_path / "pruned" / "piece-cache.jsonl"
+    pieces = load_piece_cache(cache_path)
+
+    assert manifest["selected_files"] == 2
+    assert manifest["pieces_written"] == 1
+    assert manifest["failed_files"] == 1
+    assert len(manifest["error_samples"]) == 1
+    assert [piece.piece_id for piece in pieces] == ["data/good.mid"]

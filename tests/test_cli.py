@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tarfile
+from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,3 +47,19 @@ def test_download_aria_midi_dry_run_emits_plan() -> None:
     payload = json.loads(result.stdout)
     assert payload["subset"] == "pruned"
     assert payload["archive_path"].endswith("aria-midi-v1-pruned-ext.tar.gz")
+
+
+def test_extract_aria_midi_command_emits_manifest(tmp_path: Path) -> None:
+    archive_path = tmp_path / "pruned" / "aria-midi-v1-pruned-ext.tar.gz"
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with tarfile.open(archive_path, mode="w:gz") as archive:
+        payload = b"midi"
+        info = tarfile.TarInfo(name="aria-midi-v1-pruned-ext/data/example.mid")
+        info.size = len(payload)
+        archive.addfile(info, BytesIO(payload))
+
+    result = _run_cli("extract-aria-midi", "--root", str(tmp_path))
+    manifest = json.loads(result.stdout)
+    assert manifest["subset"] == "pruned"
+    assert manifest["dataset_root"].endswith("aria-midi-v1-pruned-ext")

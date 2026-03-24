@@ -39,6 +39,54 @@ The downloader stores:
 - the relevant preprocess JSON when one exists
 - a local `manifest.json`
 
+## Extracting The Archive
+
+The downloaded archive can be extracted into the ignored cache tree with:
+
+```bash
+python3 -m kyma.cli extract-aria-midi --subset pruned
+```
+
+By default that unpacks into:
+
+```text
+artifacts/data/aria-midi/pruned/extracted/aria-midi-v1-pruned-ext/
+```
+
+## Building A Piece Cache
+
+Kyma can build a tokenized piece cache directly from the extracted Aria-MIDI
+tree:
+
+```bash
+python3 -m kyma.cli build-aria-midi-piece-cache --subset pruned
+```
+
+Useful options for smoke runs or bounded experiments:
+
+```bash
+python3 -m kyma.cli build-aria-midi-piece-cache \
+  --subset pruned \
+  --limit 1024 \
+  --shuffle \
+  --random-seed 0 \
+  --overwrite
+```
+
+The default cache path is:
+
+```text
+artifacts/data/aria-midi/pruned/piece-cache.jsonl
+```
+
+Load that cache with:
+
+```python
+from kyma.data import load_piece_cache
+
+pieces = load_piece_cache("artifacts/data/aria-midi/pruned/piece-cache.jsonl")
+```
+
 ## From Aria-Style JSONL
 
 If you already have an Aria-style JSONL dataset of `MidiDict` records:
