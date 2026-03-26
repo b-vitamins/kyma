@@ -10,6 +10,8 @@ commit messages for milestone commits.
 ### Added
 
 - A branch-local RTX 3060 pilot runner with bounded cache building, deterministic train/validation planning, and a capped launch surface
+- Remote experiment-control scripts, a root `.env.example`, and AGENTS guidance
+  for managing runs on named remote machines
 - A repo-local virtualenv bootstrap script with local source overrides and system-runtime fallbacks for workstation-specific dependency quirks
 - Mixed-precision, gradient-accumulation, and checkpointed-scaler controls for the main Kyma pretraining loop
 - Piece-cache serialization, raw Aria-MIDI archive extraction, and CLI entrypoints for building tokenized local training caches
@@ -49,6 +51,8 @@ commit messages for milestone commits.
 ### Changed
 
 - Tightened the branch-local RTX 3060 pilot runner so it can be executed directly from `scripts/` and emits a single parseable JSON document for `plan --write-summary`
+- `.gitignore` now excludes remote-control secrets and downloaded remote
+  artifacts
 - Bound `pyright`, `ruff`, `pytest`, and the make targets to the repo-local `.venv` contract instead of falling through to ambient tools
 - Taught the local bootstrap flow to prefer the published SLinOSS CUDA wheel on supported GPU workstations and to install the matching local `nvidia-cutlass-dsl` / `cuda-python` runtime dependencies
 - Added an explicit SLinOSS scan-backend selection to the model config and defaulted the packaged model to the stateful reference backend for long-context execution on CUDA

@@ -8,6 +8,10 @@ __pycache__/
 .pyright/
 .venv/
 venv/
+.env
+.env.local
+.remote-known-hosts
+remote-downloads/
 
 # Build artifacts
 build/
