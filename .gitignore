@@ -19,8 +19,14 @@ remote-downloads/
 artifacts/
 logs/
 tmp/
-experiments/
 wandb/
+
+# Experiment runtime outputs
+experiments/**/artifacts/
+experiments/**/checkpoints/
+experiments/**/logs/
+experiments/**/metrics/
+experiments/**/wandb/
 
 # Build artifacts
 build/

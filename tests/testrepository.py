@@ -26,11 +26,13 @@ def test_required_repository_files_exist() -> None:
 
 
 def test_gitignore_covers_local_env_and_operator_files() -> None:
-    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert ".env" in gitignore
     assert ".remote-known-hosts" in gitignore
     assert "remote-downloads/" in gitignore
     assert ".venv/" in gitignore
+    assert "experiments/**/logs/" in gitignore
+    assert "experiments/" not in gitignore
 
 
 def test_env_example_documents_wandb_defaults() -> None:

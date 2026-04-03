@@ -6,7 +6,7 @@ from pathlib import Path
 
 from kyma.config.schemas import ProjectPaths
 from kyma.utils.env import parseenv
-from kyma.utils.wandb import _shouldenable, createwandbrun, haswandbnetrc
+from kyma.utils.wandb import _modefromenv, _shouldenable, createwandbrun, haswandbnetrc
 
 
 def test_parseenv_supports_shell_style_assignments(tmp_path: Path) -> None:
@@ -109,3 +109,8 @@ def test_createwandbrun_noops_when_init_fails(monkeypatch, tmp_path: Path) -> No
     )
 
     assert not wandbrun.enabled
+
+
+def test_modefromenv_ignores_unknown_values(monkeypatch) -> None:
+    monkeypatch.setenv("WANDB_MODE", "bogus")
+    assert _modefromenv() is None

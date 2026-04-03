@@ -6,7 +6,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from kyma.config.schemas import ProjectPaths
 from kyma.utils.env import loadrepowandbenv
@@ -30,10 +30,20 @@ def _tagsfromenv() -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
+def _modefromenv() -> Literal["online", "offline", "disabled", "shared"] | None:
+    raw = os.environ.get("WANDB_MODE")
+    if raw is None:
+        return None
+    normalized = raw.strip().lower()
+    if normalized in {"online", "offline", "disabled", "shared"}:
+        return cast(Literal["online", "offline", "disabled", "shared"], normalized)
+    return None
+
+
 def _shouldenable() -> bool:
     loadrepowandbenv()
     explicit = _parsebool(os.environ.get("KYMA_WANDB"))
-    mode = os.environ.get("WANDB_MODE", "").strip().lower()
+    mode = _modefromenv()
     if explicit is False:
         return False
     if mode == "disabled":
@@ -116,7 +126,7 @@ def createwandbrun(
             tags=mergedtags or None,
             job_type=jobtype,
             dir=str(projectpaths.root),
-            mode=os.environ.get("WANDB_MODE") or None,
+            mode=_modefromenv(),
             config=runconfig,
             save_code=False,
         )

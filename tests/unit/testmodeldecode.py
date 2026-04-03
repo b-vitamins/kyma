@@ -6,6 +6,7 @@ from kyma.model import KymaLM, ModelConfig
 
 
 def test_prefill_and_decode_match_full_forward() -> None:
+    torch.manual_seed(0)
     config = ModelConfig(
         d_model=64,
         n_heads=1,
@@ -34,6 +35,7 @@ def test_prefill_and_decode_match_full_forward() -> None:
 
 
 def test_conditioned_forward_drops_first_position() -> None:
+    torch.manual_seed(0)
     config = ModelConfig(
         d_model=64,
         n_heads=1,

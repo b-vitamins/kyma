@@ -20,3 +20,5 @@ All notable changes to this project will be documented in this file.
   repo-local `.env` defaults and `~/.netrc` auth support.
 - Added optional `torch.compile` controls to the pretraining entrypoint through
   Accelerate's TorchDynamo plugin surface.
+- Stopped ignoring the entire `experiments/` tree so experiment code and docs
+  can be version controlled while runtime byproducts remain ignored.
