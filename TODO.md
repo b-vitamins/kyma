@@ -16,3 +16,4 @@
 - [x] Fix the RoPE checkpoint path so compiled full-pass Kyma runs work with the Aria-aligned block interface.
 - [x] Reallocate the canonical Kyma base family toward recurrent long-context capacity, raise the default mixer `r_min` to `0.8`, and make pretraining request BF16 explicitly.
 - [x] Add Ada-specific dataset and calibration scaffolding for the first `kyma-s` and `kyma-m` runs.
+- [x] Align the Ada calibration bench with the flattened LM token-loss path used in pretraining.

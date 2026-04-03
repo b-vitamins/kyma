@@ -93,6 +93,25 @@ def _targettokens(modelname: str) -> int:
     return _paramcount(modelname) * CHINCHILLA_TOKENS_PER_PARAM
 
 
+def _flatceloss(
+    lossfn: torch.nn.CrossEntropyLoss,
+    logits: torch.Tensor,
+    tgt: torch.Tensor,
+) -> torch.Tensor:
+    if logits.ndim != 3:
+        raise ValueError(
+            f"Expected logits shape (batch, seq, vocab), got {tuple(logits.shape)}."
+        )
+    if tgt.ndim != 2:
+        raise ValueError(f"Expected tgt shape (batch, seq), got {tuple(tgt.shape)}.")
+    if tuple(logits.shape[:2]) != tuple(tgt.shape):
+        raise ValueError(
+            "Expected logits batch/seq dims to match tgt shape, got "
+            f"{tuple(logits.shape[:2])} and {tuple(tgt.shape)}."
+        )
+    return lossfn(logits.reshape(-1, int(logits.shape[-1])), tgt.reshape(-1))
+
+
 def fetch(args) -> None:
     from huggingface_hub import snapshot_download
 
@@ -246,7 +265,7 @@ def bench(args) -> None:
                 started = time.perf_counter()
                 with torch.autocast(device_type="cuda", dtype=dtype):
                     logits = target(src)
-                    loss = lossfn(logits.transpose(1, 2), tgt)
+                    loss = _flatceloss(lossfn, logits, tgt)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)

@@ -47,6 +47,9 @@ All notable changes to this project will be documented in this file.
   and made LM pretraining request BF16 explicitly through Accelerate.
 - Added Ada-specific experiment scaffolding for dataset prep, token-budget
   planning, and pretraining calibration.
+- Aligned the Ada calibration bench with the flattened token-loss path so large
+  BF16 probes measure the real training route without tripping the broken 3D CE
+  backward kernel.
 - Updated the pinned SLinOSS release wheel to `v0.4.1`.
 - Defaulted Kyma pretraining CLI launches to validate every `1000` steps so
   long-run evaluation stays a modest share of wall clock unless explicitly
