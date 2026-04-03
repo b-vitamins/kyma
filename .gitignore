@@ -19,6 +19,8 @@ remote-downloads/
 artifacts/
 logs/
 tmp/
+experiments/
+wandb/
 
 # Build artifacts
 build/

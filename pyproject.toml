@@ -4,23 +4,54 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kyma"
-version = "0.0.0"
-description = "Repository basics with optional remote-control helpers."
+version = "0.1.0"
+description = "State-space symbolic-music modeling with Aria-compatible workflows."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "B", email = "b@example.com" }]
-dependencies = []
+dependencies = [
+  "accelerate>=1.5",
+  "ariautils @ git+https://github.com/EleutherAI/aria-utils.git",
+  "jsonlines>=4.0.0",
+  "safetensors>=0.5.3",
+  "slinoss[cuda] @ https://github.com/b-vitamins/slinoss/releases/download/v0.3.0/slinoss-0.3.0-cp311-cp311-linux_x86_64.whl",
+  "tqdm>=4.67.1",
+]
 
 [project.optional-dependencies]
 dev = [
+  "build>=1.2.2.post1",
   "pytest>=9",
   "ruff>=0.9.5",
   "pyright>=1.1.403",
 ]
+eval = [
+  "mido>=1.3.3",
+  "torchaudio>=2.10.0",
+  "transformers>=4.57.0",
+]
+demo = [
+  "mido>=1.3.3",
+  "python-rtmidi>=1.5.8",
+]
+all = [
+  "build>=1.2.2.post1",
+  "mido>=1.3.3",
+  "pyright>=1.1.403",
+  "pytest>=9",
+  "python-rtmidi>=1.5.8",
+  "ruff>=0.9.5",
+  "torchaudio>=2.10.0",
+  "transformers>=4.57.0",
+]
+
+[project.scripts]
+kyma = "kyma.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+python_files = ["test*.py"]
 addopts = "-ra"
 
 [tool.ruff]
@@ -40,3 +71,6 @@ select = [
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.setuptools.packages.find]
+include = ["kyma", "kyma.*"]

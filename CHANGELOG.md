@@ -1,0 +1,16 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## Unreleased
+
+- Established the Kyma repository contract, local `.venv` workflow, packaging,
+  linting, typing, and test gates.
+- Added the flat `kyma/` package with Aria-compatible config loading, dataset
+  builders, tokenization adapters, SLinOSS-backed language models, and recurrent
+  inference helpers.
+- Added pretraining, classifier finetuning, contrastive embedding finetuning,
+  linear-probe evaluation, optional MERT and M3 evaluation hooks, and a
+  PyTorch realtime continuation demo.
+- Added compatibility, unit, integration, and repository-contract tests for the
+  initial milestone series.

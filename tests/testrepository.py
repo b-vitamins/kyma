@@ -6,7 +6,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_required_repository_files_exist() -> None:
     expected = [
         ROOT / "AGENTS.md",
+        ROOT / "CHANGELOG.md",
         ROOT / "README.md",
+        ROOT / "TODO.md",
+        ROOT / "demo" / "demotorch.py",
+        ROOT / "kyma" / "cli.py",
         ROOT / "pyproject.toml",
         ROOT / "pyrightconfig.json",
         ROOT / ".pre-commit-config.yaml",
@@ -38,6 +42,9 @@ def test_pre_commit_prefers_local_venv_tools() -> None:
 def test_bootstrap_installs_local_quality_tools() -> None:
     script = (ROOT / "scripts" / "bootstrap-venv.sh").read_text(encoding="utf-8")
     assert ".venv" in script
-    assert "pytest>=9" in script
-    assert "ruff>=0.9.5" in script
-    assert "pyright>=1.1.403" in script
+    assert "pip install --upgrade -e '.[all]'" in script
+
+
+def test_project_tracks_milestones_and_change_history() -> None:
+    assert (ROOT / "CHANGELOG.md").is_file()
+    assert (ROOT / "TODO.md").is_file()

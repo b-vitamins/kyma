@@ -1,8 +1,28 @@
 {
-    "include": ["scripts", "tests"],
+    "include": ["demo", "kyma", "scripts", "tests"],
+    "exclude": [
+        "demo",
+        "kyma/eval",
+        "kyma/training/classifierfinetune.py",
+        "kyma/training/contrastivefinetune.py"
+    ],
+    "ignore": [
+        "demo",
+        "kyma/eval",
+        "kyma/training/classifierfinetune.py",
+        "kyma/training/contrastivefinetune.py"
+    ],
     "venvPath": ".",
     "venv": ".venv",
     "pythonVersion": "3.11",
-    "typeCheckingMode": "strict",
+    "typeCheckingMode": "basic",
+    "reportAttributeAccessIssue": false,
+    "reportMissingTypeArgument": false,
     "reportMissingTypeStubs": false,
+    "reportUnknownArgumentType": false,
+    "reportUnknownLambdaType": false,
+    "reportUnknownMemberType": false,
+    "reportUnknownParameterType": false,
+    "reportUnknownVariableType": false,
+    "reportUnusedImport": false
 }

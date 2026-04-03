@@ -17,7 +17,7 @@ KNOWN_HOSTS_FILE = ROOT / ".remote-known-hosts"
 
 
 class RemoteConfigError(RuntimeError):
-    pass
+    """Raised when the remote helper configuration is invalid."""
 
 
 AuthMode = Literal["key", "password"]
@@ -172,7 +172,10 @@ def resolve_machine(env: dict[str, str], requested: str | None) -> RemoteMachine
 def prefixed_env(machine: RemoteMachine) -> dict[str, str]:
     env = os.environ.copy()
     if uses_sshpass(machine):
-        assert machine.password is not None
+        if machine.password is None:
+            raise RemoteConfigError(
+                f"password auth requested for {machine.name!r} without PASSWORD"
+            )
         env["SSHPASS"] = machine.password
     return env
 
