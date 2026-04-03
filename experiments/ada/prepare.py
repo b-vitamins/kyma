@@ -17,12 +17,21 @@ from ariautils.tokenizer import AbsTokenizer
 
 from kyma.config.loaders import loadmodelschema
 from kyma.data.mididataset import MidiDataset
-from kyma.data.pretrainingdataset import PretrainingDataset
+from kyma.data.packeddataset import PackedDataset
 from kyma.data.tokenization import gettokenizer
 from kyma.model import KymaLM
 
 CHINCHILLA_TOKENS_PER_PARAM = 20
 DEFAULT_SPLIT = 0.995
+DEFAULT_GRAD_ACC_STEPS = 1
+ADA_MICROBATCHES = {
+    "kyma-s": 18,
+    "kyma-m": 12,
+}
+ADA_TOKENS_PER_SECOND = {
+    "kyma-s": 46_008,
+    "kyma-m": 21_672,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,10 +85,8 @@ def _archivepath(paths: AdaPaths, subset: str) -> Path:
     return paths.snapshotdir / f"aria-midi-v1-{subset}-ext.tar.gz"
 
 
-def _countpayloadlines(path: Path) -> int:
-    with path.open(encoding="utf-8") as handle:
-        next(handle, None)
-        return sum(1 for _ in handle)
+def _quarterworkers() -> int:
+    return max(1, (os.cpu_count() or 1) // 4)
 
 
 def _paramcount(modelname: str) -> int:
@@ -144,6 +151,7 @@ def buildmidi(args) -> None:
         recur=True,
         overwrite=True,
         shuffle=True,
+        workers=args.workers,
     )
     MidiDataset.splitfromfile(
         paths.midijsonl,
@@ -161,21 +169,23 @@ def pack(args) -> None:
     if not paths.valjsonl.is_file():
         raise FileNotFoundError(f"Val JSONL not found: {paths.valjsonl}")
 
-    PretrainingDataset.build(
+    PackedDataset.build(
         tokenizer=tokenizer,
         savedir=str(paths.trainpack),
         max_seq_len=args.seq_len,
-        numepochs=args.train_epochs,
+        shard_tokens=args.shard_tokens,
         mididatasetpath=str(paths.trainjsonl),
         separatesequences=args.sep_sequences,
+        workers=args.workers,
     )
-    PretrainingDataset.build(
+    PackedDataset.build(
         tokenizer=tokenizer,
         savedir=str(paths.valpack),
         max_seq_len=args.seq_len,
-        numepochs=args.val_epochs,
+        shard_tokens=args.shard_tokens,
         mididatasetpath=str(paths.valjsonl),
         separatesequences=args.sep_sequences,
+        workers=args.workers,
     )
 
 
@@ -184,23 +194,33 @@ def plan(args) -> None:
     summary: dict[str, Any] = {
         "models": {},
     }
-    if paths.trainpack.is_dir():
-        header = PretrainingDataset.getconfigfrompath(paths.trainpack)
-        trainentries = _countpayloadlines(paths.trainpack / "epoch0.jsonl")
-        valentries = (
-            _countpayloadlines(paths.valpack / "epoch0.jsonl")
-            if paths.valpack.is_dir()
+    plannedseqlen = args.seq_len
+    if PackedDataset.manifestpath(paths.trainpack).is_file():
+        trainmanifest = PackedDataset.loadmanifest(paths.trainpack)
+        valmanifest = (
+            PackedDataset.loadmanifest(paths.valpack)
+            if PackedDataset.manifestpath(paths.valpack).is_file()
             else None
         )
-        tokensperepoch = trainentries * int(header["max_seq_len"])
+        plannedseqlen = trainmanifest.max_seq_len
+        inputtokensperpass = trainmanifest.sequence_count * trainmanifest.max_seq_len
         summary["dataset"] = {
-            "train_entries_epoch0": trainentries,
-            "val_entries_epoch0": valentries,
-            "max_seq_len": int(header["max_seq_len"]),
-            "tokens_per_epoch": tokensperepoch,
+            "train_shards": len(trainmanifest.shards),
+            "val_shards": len(valmanifest.shards) if valmanifest is not None else None,
+            "max_seq_len": trainmanifest.max_seq_len,
+            "shard_token_capacity": trainmanifest.shard_token_capacity,
+            "train_sequence_count": trainmanifest.sequence_count,
+            "train_input_tokens_per_pass": inputtokensperpass,
+            "train_loss_tokens_per_pass": trainmanifest.loss_token_count,
+            "val_sequence_count": (
+                valmanifest.sequence_count if valmanifest is not None else None
+            ),
+            "val_loss_tokens_per_pass": (
+                valmanifest.loss_token_count if valmanifest is not None else None
+            ),
         }
     else:
-        tokensperepoch = None
+        inputtokensperpass = None
 
     for modelname in args.models:
         params = _paramcount(modelname)
@@ -209,9 +229,28 @@ def plan(args) -> None:
             "params": params,
             "target_tokens": targettokens,
         }
-        if tokensperepoch is not None:
-            modelsummary["recommended_epochs"] = math.ceil(
-                targettokens / tokensperepoch
+        microbatch = ADA_MICROBATCHES.get(modelname)
+        if microbatch is not None:
+            tokensperstep = args.gpus * args.grad_acc_steps * plannedseqlen * microbatch
+            modelsummary.update(
+                {
+                    "microbatch": microbatch,
+                    "grad_acc_steps": args.grad_acc_steps,
+                    "tokens_per_step": tokensperstep,
+                    "recommended_steps": math.ceil(targettokens / tokensperstep),
+                }
+            )
+            tokensthroughput = ADA_TOKENS_PER_SECOND.get(modelname)
+            if tokensthroughput is not None:
+                effective = args.gpus * tokensthroughput
+                modelsummary["estimated_hours"] = round(
+                    targettokens / effective / 3600,
+                    2,
+                )
+        if inputtokensperpass is not None:
+            modelsummary["recommended_passes"] = round(
+                targettokens / inputtokensperpass,
+                2,
             )
         summary["models"][modelname] = modelsummary
 
@@ -308,12 +347,13 @@ def buildparser() -> argparse.ArgumentParser:
 
     midiparser = subparsers.add_parser("midi")
     midiparser.add_argument("--split", type=float, default=DEFAULT_SPLIT)
+    midiparser.add_argument("--workers", type=int, default=_quarterworkers())
 
     packparser = subparsers.add_parser("pack")
     packparser.add_argument("--tokenizer", choices=("abs", "rel"), default="abs")
     packparser.add_argument("--seq_len", type=int, default=8192)
-    packparser.add_argument("--train_epochs", type=int, default=1)
-    packparser.add_argument("--val_epochs", type=int, default=1)
+    packparser.add_argument("--shard_tokens", type=int, default=33_554_432)
+    packparser.add_argument("--workers", type=int, default=_quarterworkers())
     packparser.add_argument("--sep_sequences", action="store_true")
 
     planparser = subparsers.add_parser("plan")
@@ -327,6 +367,13 @@ def buildparser() -> argparse.ArgumentParser:
         type=int,
         default=CHINCHILLA_TOKENS_PER_PARAM,
     )
+    planparser.add_argument("--seq_len", type=int, default=8192)
+    planparser.add_argument(
+        "--grad_acc_steps",
+        type=int,
+        default=DEFAULT_GRAD_ACC_STEPS,
+    )
+    planparser.add_argument("--gpus", type=int, default=1)
 
     benchparser = subparsers.add_parser("bench")
     benchparser.add_argument("--model", choices=("kyma-s", "kyma-m"), required=True)

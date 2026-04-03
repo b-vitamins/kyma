@@ -50,6 +50,8 @@ All notable changes to this project will be documented in this file.
 - Aligned the Ada calibration bench with the flattened token-loss path so large
   BF16 probes measure the real training route without tripping the broken 3D CE
   backward kernel.
+- Reworked Ada experiment prep to target reusable shard manifests, step-based
+  run planning, and quarter-core pack concurrency on shared hardware.
 - Updated the pinned SLinOSS release wheel to `v0.4.1`.
 - Defaulted Kyma pretraining CLI launches to validate every `1000` steps so
   long-run evaluation stays a modest share of wall clock unless explicitly
