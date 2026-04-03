@@ -6,6 +6,7 @@ import functools
 import json
 import logging
 import multiprocessing
+import os
 import random
 import shutil
 from collections import defaultdict
@@ -106,6 +107,7 @@ class MidiDataset:
         recur: bool = False,
         manualmetadata: dict[str, str] | None = None,
         shuffle: bool = True,
+        workers: int | None = None,
     ) -> MidiDataset:
         metadata = manualmetadata or {}
         validatemanualmetadata(metadata)
@@ -114,6 +116,7 @@ class MidiDataset:
             recur=recur,
             manualmetadata=metadata,
             shuffle=shuffle,
+            workers=workers,
         )
         if entries is None:
             raise RuntimeError("Expected in-memory dataset entries.")
@@ -129,6 +132,7 @@ class MidiDataset:
         overwrite: bool = False,
         manualmetadata: dict[str, str] | None = None,
         shuffle: bool = True,
+        workers: int | None = None,
     ) -> None:
         metadata = manualmetadata or {}
         validatemanualmetadata(metadata)
@@ -139,6 +143,7 @@ class MidiDataset:
             overwrite=overwrite,
             manualmetadata=metadata,
             shuffle=shuffle,
+            workers=workers,
         )
 
     @classmethod
@@ -216,8 +221,16 @@ def _getmididict(path: Path):
     return True, (mididict, mididict.calculate_hash(), path)
 
 
-def _getmididictsmp(paths: list[Path]):
-    with multiprocessing.Pool() as pool:
+def resolvempworkers(workers: int | None) -> int:
+    if workers is None:
+        return max(1, os.cpu_count() or 1)
+    if workers <= 0:
+        raise ValueError("workers must be positive.")
+    return workers
+
+
+def _getmididictsmp(paths: list[Path], *, workers: int | None = None):
+    with multiprocessing.Pool(processes=resolvempworkers(workers)) as pool:
         seenhashes: dict[str, list[str]] = defaultdict(list)
         for index, (success, result) in enumerate(
             pool.imap_unordered(_getmididict, paths),
@@ -249,6 +262,7 @@ def buildmididictdataset(
     overwrite: bool = False,
     manualmetadata: dict[str, str] | None = None,
     shuffle: bool = True,
+    workers: int | None = None,
 ):
     paths = [Path(path) for path in (midpaths or [])]
     if dir is not None:
@@ -272,7 +286,7 @@ def buildmididictdataset(
 
     if streamsavepath is None:
         entries: list[MidiDict] = []
-        for entry in _getmididictsmp(paths):
+        for entry in _getmididictsmp(paths, workers=workers):
             entries.append(applymanualmetadata(entry, metadata))
         return entries
 
@@ -280,7 +294,7 @@ def buildmididictdataset(
     if savepath.exists() and not overwrite:
         raise FileExistsError(f"File already exists: {savepath}")
     with jsonlines.open(savepath, mode="w") as writer:
-        for entry in _getmididictsmp(paths):
+        for entry in _getmididictsmp(paths, workers=workers):
             writer.write(applymanualmetadata(entry, metadata).get_msg_dict())
     return None
 
@@ -316,13 +330,14 @@ def getseqs(
     tokenizer: Tokenizer,
     mididictiter: Iterable,
     tokenizefn: Callable[[MidiDict], list] | None = None,
+    workers: int | None = None,
 ):
     iterable = (
         list(mididictiter)
         if multiprocessing.get_start_method() == "spawn"
         else mididictiter
     )
-    with multiprocessing.Pool() as pool:
+    with multiprocessing.Pool(processes=resolvempworkers(workers)) as pool:
         yield from pool.imap_unordered(
             functools.partial(_getseqs, tokenizer=tokenizer, tokenizefn=tokenizefn),
             iterable,

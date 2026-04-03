@@ -53,6 +53,7 @@ def _iterpackedentries(
     maxseqlen: int,
     separatesequences: bool,
     fileembeddings: dict[str, list[float]] | None,
+    workers: int | None,
 ):
     if fileembeddings is not None and not separatesequences:
         raise ValueError("Embeddings require separate packed sequences.")
@@ -60,7 +61,7 @@ def _iterpackedentries(
     padtok = tokenizer.pad_tok
 
     if separatesequences:
-        for result in reservoir(getseqs(tokenizer, datasetiter), 10):
+        for result in reservoir(getseqs(tokenizer, datasetiter, workers=workers), 10):
             if result is None:
                 continue
             tokens, filepath = result
@@ -78,7 +79,7 @@ def _iterpackedentries(
         return
 
     seqbuffer: list = []
-    for result in reservoir(getseqs(tokenizer, datasetiter), 10):
+    for result in reservoir(getseqs(tokenizer, datasetiter, workers=workers), 10):
         if result is None:
             continue
         tokens, _filepath = result
@@ -363,6 +364,7 @@ class PackedDataset(Dataset):
         mididatasetpath: str | None = None,
         separatesequences: bool = False,
         fileembeddings: dict[str, list[float]] | None = None,
+        workers: int | None = None,
     ) -> None:
         if max_seq_len <= 0:
             raise ValueError("max_seq_len must be greater than zero.")
@@ -396,6 +398,7 @@ class PackedDataset(Dataset):
             maxseqlen=max_seq_len,
             separatesequences=separatesequences,
             fileembeddings=fileembeddings,
+            workers=workers,
         ):
             writer.write(seq=entry["seq"], emb=entry["emb"])
 

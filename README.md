@@ -64,6 +64,8 @@ Language-model size presets:
 - Pretraining data is packed once into reusable shard sets with a `manifest.json`
   plus `shard-*.jsonl` files, then trained by step count against those stable
   shards.
+- `midi-dataset` and `pack-dataset` accept optional `--workers` overrides when
+  you need to cap preprocessing concurrency on shared machines.
 - Training jobs automatically pick up `WANDB_*` and `KYMA_WANDB*` keys from the
   repo-local `.env` when present. On production machines, prefer `~/.netrc`
   for auth and keep the repo-local `.env` limited to non-secret defaults.

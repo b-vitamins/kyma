@@ -4,7 +4,7 @@ import pytest
 from ariautils.midi import MidiDict
 from ariautils.tokenizer import AbsTokenizer
 
-from kyma.data.mididataset import MidiDataset
+from kyma.data.mididataset import MidiDataset, resolvempworkers
 from kyma.data.packeddataset import PackedDataset
 
 
@@ -26,6 +26,7 @@ def testbuildwritesmanifestandreusableshards(tmp_path: Path) -> None:
         max_seq_len=32,
         shard_tokens=64,
         mididataset=entries,
+        workers=1,
     )
 
     manifest = PackedDataset.loadmanifest(savedir)
@@ -58,6 +59,7 @@ def testbuildsupports_embeddings_for_separate_sequences(tmp_path: Path) -> None:
         mididataset=MidiDataset([mididict]),
         separatesequences=True,
         fileembeddings={mididict.metadata["abs_load_path"]: embedding},
+        workers=1,
     )
 
     dataset = PackedDataset(str(savedir), tokenizer)
@@ -81,4 +83,10 @@ def testbuildrejects_embeddings_without_separate_sequences(tmp_path: Path) -> No
             mididataset=MidiDataset([mididict]),
             separatesequences=False,
             fileembeddings={mididict.metadata["abs_load_path"]: [0.0, 1.0]},
+            workers=1,
         )
+
+
+def testresolvempworkersrejectsnonpositive() -> None:
+    with pytest.raises(ValueError, match="workers must be positive"):
+        resolvempworkers(0)

@@ -30,3 +30,5 @@ All notable changes to this project will be documented in this file.
 - Replaced the epoch-indexed pretraining pack format with reusable packed shard
   manifests and switched LM pretraining control to step-based runs over stable
   shard sets.
+- Added explicit worker controls to MIDI hydration and reusable shard packing so
+  preprocessing concurrency can be capped cleanly on shared machines.

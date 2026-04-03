@@ -68,6 +68,7 @@ def _parsemididatasetargs():
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--shuffle", action="store_true")
     parser.add_argument("--split", type=float, required=False)
+    parser.add_argument("--workers", type=int)
     parser.add_argument(
         "--metadata", nargs=2, metavar=("KEY", "VALUE"), action="append"
     )
@@ -81,6 +82,7 @@ def _parsepackdatasetargs():
     parser.add_argument("--tokenizer_name", choices=["abs", "rel"], required=True)
     parser.add_argument("--seq_len", type=int, default=4096)
     parser.add_argument("--shard_tokens", type=int, default=33_554_432)
+    parser.add_argument("--workers", type=int)
     parser.add_argument("--sep_sequences", action="store_true")
     parser.add_argument("--embedding_dataset_path", required=False)
     return parser.parse_args(sys.argv[2:])
@@ -197,6 +199,7 @@ def buildmididataset(args) -> None:
         overwrite=True,
         manualmetadata=metadata,
         shuffle=args.shuffle,
+        workers=args.workers,
     )
     if args.split is not None:
         if not 0.0 < args.split < 1.0:
@@ -227,6 +230,7 @@ def buildpackeddataset(args) -> None:
         mididatasetpath=args.load_path,
         separatesequences=args.sep_sequences,
         fileembeddings=fileembeddings,
+        workers=args.workers,
     )
 
 
