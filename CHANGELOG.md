@@ -25,3 +25,5 @@ All notable changes to this project will be documented in this file.
 - Switched LM pretraining to a flattened token-loss path that preserves the
   objective while avoiding the broken BF16 CUDA `nll_loss2d_backward` route at
   large batch shapes.
+- Fixed pretraining shard header serialization so dataset packing works with
+  the slotted `DatasetHeader` schema on real runs.

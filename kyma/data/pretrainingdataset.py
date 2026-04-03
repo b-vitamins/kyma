@@ -6,6 +6,7 @@ import json
 import mmap
 from collections.abc import Callable
 from contextlib import ExitStack
+from dataclasses import asdict
 from pathlib import Path
 
 import jsonlines
@@ -186,7 +187,7 @@ class PretrainingDataset(Dataset):
 
         def buildconcatepoch(savepath: Path, datasetiter) -> None:
             with jsonlines.open(savepath, mode="w") as writer:
-                writer.write(header.__dict__)
+                writer.write(asdict(header))
                 buffer: list = []
                 for result in reservoir(getseqs(tokenizer, datasetiter), 10):
                     if result is None:
@@ -202,7 +203,7 @@ class PretrainingDataset(Dataset):
 
         def buildseparatedepoch(savepath: Path, datasetiter) -> None:
             with jsonlines.open(savepath, mode="w") as writer:
-                writer.write(header.__dict__)
+                writer.write(asdict(header))
                 for result in reservoir(getseqs(tokenizer, datasetiter), 10):
                     if result is None:
                         continue
