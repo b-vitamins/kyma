@@ -22,3 +22,6 @@ All notable changes to this project will be documented in this file.
   Accelerate's TorchDynamo plugin surface.
 - Stopped ignoring the entire `experiments/` tree so experiment code and docs
   can be version controlled while runtime byproducts remain ignored.
+- Switched LM pretraining to a flattened token-loss path that preserves the
+  objective while avoiding the broken BF16 CUDA `nll_loss2d_backward` route at
+  large batch shapes.

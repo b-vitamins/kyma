@@ -98,6 +98,30 @@ def buildoptim(
     return optimizer, scheduler
 
 
+def tokenlossmap(
+    lossfn: nn.CrossEntropyLoss,
+    logits: torch.Tensor,
+    tgt: torch.Tensor,
+) -> torch.Tensor:
+    """Return per-token LM loss without routing through the 3D CE kernel path."""
+
+    if logits.ndim != 3:
+        raise ValueError(
+            f"Expected logits shape (batch, T, vocab), got {tuple(logits.shape)}."
+        )
+    if tgt.ndim != 2:
+        raise ValueError(f"Expected tgt shape (batch, T), got {tuple(tgt.shape)}.")
+    if tuple(logits.shape[:2]) != tuple(tgt.shape):
+        raise ValueError(
+            "Expected logits batch/time dims to match tgt shape, got "
+            f"{tuple(logits.shape[:2])} and {tuple(tgt.shape)}."
+        )
+
+    vocabsize = int(logits.shape[-1])
+    flatloss = lossfn(logits.reshape(-1, vocabsize), tgt.reshape(-1))
+    return flatloss.reshape_as(tgt)
+
+
 def _runtrain(
     *,
     epochs: int,
@@ -170,7 +194,7 @@ def _runtrain(
                     tgt = tgt[:, :-1]
                     mask = mask[:, :-1]
 
-                loss = lossfn(logits.transpose(1, 2), tgt)
+                loss = tokenlossmap(lossfn, logits, tgt)
                 if mask.sum() == 0:
                     loss = (loss * 0).sum()
                 else:
@@ -238,7 +262,7 @@ def _runtrain(
             if usecond:
                 tgt = tgt[:, :-1]
                 mask = mask[:, :-1]
-            loss = lossfn(logits.transpose(1, 2), tgt)
+            loss = tokenlossmap(lossfn, logits, tgt)
             if mask.sum() == 0:
                 loss = (loss * 0).sum()
             else:
