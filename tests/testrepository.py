@@ -33,6 +33,12 @@ def test_gitignore_covers_local_env_and_operator_files() -> None:
     assert ".venv/" in gitignore
 
 
+def test_env_example_documents_wandb_defaults() -> None:
+    envexample = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "# WANDB_PROJECT=kyma" in envexample
+    assert "# WANDB_ENTITY=" in envexample
+
+
 def test_pre_commit_prefers_local_venv_tools() -> None:
     script = (ROOT / "scripts" / "pre-commit.sh").read_text(encoding="utf-8")
     assert ".venv" in script

@@ -31,6 +31,9 @@ eval = [
   "torchaudio>=2.10.0",
   "transformers>=4.57.0",
 ]
+observability = [
+  "wandb>=0.21.0",
+]
 demo = [
   "mido>=1.3.3",
   "python-rtmidi>=1.5.8",
@@ -44,6 +47,7 @@ all = [
   "ruff>=0.9.5",
   "torchaudio>=2.10.0",
   "transformers>=4.57.0",
+  "wandb>=0.21.0",
 ]
 
 [project.scripts]

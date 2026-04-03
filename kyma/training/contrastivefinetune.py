@@ -28,6 +28,7 @@ from kyma.model import KymaEmbeddingModel
 from kyma.training.engine import LossTracker, lrstring, savecheckpoint
 from kyma.training.optim import buildadamw, buildlinearscheduler
 from kyma.training.project import createprojectlogger, createprojectpaths
+from kyma.utils.wandb import WandbRun, createwandbrun, defaultwandbname
 
 DEFAULT_LR = 1e-5
 DEFAULT_END_RATIO = 0.1
@@ -242,6 +243,7 @@ def _train(
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     projectpaths: ProjectPaths | None,
+    wandbrun: WandbRun,
 ) -> list[dict[str, float]]:
     logger = get_logger(__name__)
 
@@ -300,6 +302,17 @@ def _train(
                     f"loss={round(float(loss.item()), 4)}, "
                     f"trailing={round(trailing, 4)}"
                 )
+                globalstep = epoch * len(trainloader) + step
+                wandbrun.log(
+                    {
+                        "train/loss": float(loss.item()),
+                        "train/trailing_loss": trailing,
+                        "train/average_loss": average,
+                        "train/lr": float(optimizer.param_groups[-1]["lr"]),
+                        "train/epoch": epoch,
+                    },
+                    step=globalstep,
+                )
         return sum(tracker.values) / len(tracker.values)
 
     def valloop(dataloader: DataLoader, epoch: int) -> float:
@@ -326,6 +339,14 @@ def _train(
                 )
         avgvalloss = sum(tracker.values) / len(tracker.values)
         logger.info("Validation epoch %s: average_loss=%.4f", epoch, avgvalloss)
+        wandbrun.log(
+            {
+                "val/loss": avgvalloss,
+                "val/epoch": epoch,
+            },
+            step=(epoch + 1) * len(trainloader),
+            force=True,
+        )
         return avgvalloss
 
     metrics = []
@@ -377,6 +398,27 @@ def train(
     modelconfig = loadmodelschema(modelname)
     modelconfig.setvocabsize(tokenizer.vocab_size)
     model = KymaEmbeddingModel(modelconfig)
+    wandbrun = (
+        createwandbrun(
+            projectpaths=projectpaths,
+            jobtype="contrastive-finetune",
+            name=defaultwandbname(projectpaths, prefix="contrastive"),
+            group=modelname,
+            tags=["contrastive", modelname],
+            runconfig={
+                "model_name": modelname,
+                "train_data": traindatapath,
+                "val_data": valdatapath,
+                "num_workers": numworkers,
+                "num_epochs": numepochs,
+                "batch_size": batchsize,
+                "grad_acc_steps": gradaccsteps,
+                **modelconfig.__dict__,
+            },
+        )
+        if projectpaths is not None
+        else WandbRun(run=None)
+    )
 
     if checkpointpath is not None:
         logger.info("Loading checkpoint from %s", checkpointpath)
@@ -403,16 +445,20 @@ def train(
         optimizer,
         scheduler,
     )
-    metrics = _train(
-        numepochs=numepochs,
-        accelerator=accelerator,
-        model=model,
-        trainloader=trainloader,
-        valloader=valloader,
-        optimizer=optimizer,
-        scheduler=scheduler,
-        projectpaths=projectpaths,
-    )
+    try:
+        metrics = _train(
+            numepochs=numepochs,
+            accelerator=accelerator,
+            model=model,
+            trainloader=trainloader,
+            valloader=valloader,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            projectpaths=projectpaths,
+            wandbrun=wandbrun,
+        )
+    finally:
+        wandbrun.finish()
     if projectpaths is None:
         return
 

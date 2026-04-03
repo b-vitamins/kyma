@@ -26,6 +26,7 @@ from kyma.training.engine import LossTracker, gatheredloss, lrstring, savecheckp
 from kyma.training.optim import buildadamw, buildlinearscheduler
 from kyma.training.project import createprojectlogger, createprojectpaths
 from kyma.utils.validation import ensuredir
+from kyma.utils.wandb import WandbRun, createwandbrun, defaultwandbname
 
 
 def gettokenizername(traindatapaths: list[str], valdatapath: str) -> str:
@@ -107,6 +108,7 @@ def _runtrain(
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     projectpaths: ProjectPaths,
+    wandbrun: WandbRun,
     checkpointinterval: int | None = None,
     resumeepoch: int | None = None,
     resumestep: int | None = None,
@@ -206,6 +208,17 @@ def _runtrain(
                         step=step,
                     )
 
+                globalstep = epoch * len(trainloader) + step
+                wandbrun.log(
+                    {
+                        "train/loss": float(loss.item()),
+                        "train/trailing_loss": trailing,
+                        "train/average_loss": average,
+                        "train/lr": float(optimizer.param_groups[-1]["lr"]),
+                        "train/epoch": epoch,
+                    },
+                    step=globalstep,
+                )
                 pbar.set_postfix_str(
                     f"lr={lrstring(optimizer, scheduler)}, "
                     f"loss={round(float(loss.item()), 4)}, "
@@ -233,6 +246,14 @@ def _runtrain(
             tracker.update(gatheredloss(accelerator, loss))
         average = sum(tracker.values) / len(tracker.values)
         logger.info("EPOCH %s: validation average_loss=%.4f", epoch, average)
+        wandbrun.log(
+            {
+                "val/loss": average,
+                "val/epoch": epoch,
+            },
+            step=(epoch + 1) * len(trainloader),
+            force=True,
+        )
         return average
 
     startepoch = 0 if resumeepoch is None else resumeepoch + 1
@@ -244,6 +265,15 @@ def _runtrain(
             epochwriter.writerow([resumeepoch, avgtrain, avgval])
             if epochcsv is not None:
                 epochcsv.flush()
+        wandbrun.log(
+            {
+                "epoch/train_loss": avgtrain,
+                "epoch/val_loss": avgval,
+                "epoch/index": resumeepoch,
+            },
+            step=(resumeepoch + 1) * len(trainloader),
+            force=True,
+        )
 
     for epoch in range(startepoch, startepoch + epochs):
         trainloader.dataset.initepoch(epoch)
@@ -253,6 +283,15 @@ def _runtrain(
             epochwriter.writerow([epoch, avgtrain, avgval])
             if epochcsv is not None:
                 epochcsv.flush()
+        wandbrun.log(
+            {
+                "epoch/train_loss": avgtrain,
+                "epoch/val_loss": avgval,
+                "epoch/index": epoch,
+            },
+            step=(epoch + 1) * len(trainloader),
+            force=True,
+        )
         savecheckpoint(
             accelerator,
             projectpaths,
@@ -307,6 +346,29 @@ def train(
         createprojectlogger(projectpaths, name=__name__)
 
     model = _buildmodel(modelname, tokenizername, useembeddings=useembeddings)
+    wandbrun = (
+        createwandbrun(
+            projectpaths=projectpaths,
+            jobtype="pretrain",
+            name=defaultwandbname(projectpaths, prefix="pretrain"),
+            group=modelname,
+            tags=["pretrain", modelname],
+            runconfig={
+                "model_name": modelname,
+                "train_data": traindatapaths,
+                "val_data": valdatapath,
+                "use_embeddings": useembeddings,
+                "num_workers": numworkers,
+                "batch_size": batchsize,
+                "grad_acc_steps": gradaccsteps,
+                "epochs": epochs,
+                "checkpoint_interval": checkpointinterval,
+                **model.config.__dict__,
+            },
+        )
+        if projectpaths is not None
+        else WandbRun(run=None)
+    )
     if checkpointpath is not None:
         model.load_state_dict(loadstate(checkpointpath), strict=False)
 
@@ -344,18 +406,22 @@ def train(
         logs=Path(projectdir or "experiments") / "logs.txt",
         metrics=Path(projectdir or "experiments") / "metrics",
     )
-    _runtrain(
-        epochs=epochs,
-        accelerator=accelerator,
-        model=model,
-        trainloader=trainloader,
-        valloader=valloader,
-        useembeddings=useembeddings,
-        optimizer=optimizer,
-        scheduler=scheduler,
-        projectpaths=projectpaths_for_run,
-        checkpointinterval=checkpointinterval,
-    )
+    try:
+        _runtrain(
+            epochs=epochs,
+            accelerator=accelerator,
+            model=model,
+            trainloader=trainloader,
+            valloader=valloader,
+            useembeddings=useembeddings,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            projectpaths=projectpaths_for_run,
+            wandbrun=wandbrun,
+            checkpointinterval=checkpointinterval,
+        )
+    finally:
+        wandbrun.finish()
 
 
 def resumetrain(
@@ -386,6 +452,31 @@ def resumetrain(
         createprojectlogger(projectpaths, name=__name__)
 
     model = _buildmodel(modelname, tokenizername, useembeddings=useembeddings)
+    wandbrun = (
+        createwandbrun(
+            projectpaths=projectpaths,
+            jobtype="pretrain-resume",
+            name=defaultwandbname(projectpaths, prefix="pretrain"),
+            group=modelname,
+            tags=["pretrain", "resume", modelname],
+            runconfig={
+                "model_name": modelname,
+                "train_data": traindatapaths,
+                "val_data": valdatapath,
+                "use_embeddings": useembeddings,
+                "num_workers": numworkers,
+                "batch_size": batchsize,
+                "grad_acc_steps": gradaccsteps,
+                "epochs": epochs,
+                "resume_epoch": resumeepoch,
+                "resume_step": resumestep,
+                "checkpoint_interval": checkpointinterval,
+                **model.config.__dict__,
+            },
+        )
+        if projectpaths is not None
+        else WandbRun(run=None)
+    )
     tokenizer = gettokenizer(tokenizername)
     trainloader, valloader = getdataloaders(
         traindatadirs=traindatapaths,
@@ -416,20 +507,24 @@ def resumetrain(
         logs=Path(projectdir or "experiments") / "logs.txt",
         metrics=Path(projectdir or "experiments") / "metrics",
     )
-    _runtrain(
-        epochs=epochs,
-        accelerator=accelerator,
-        model=model,
-        trainloader=trainloader,
-        valloader=valloader,
-        useembeddings=useembeddings,
-        optimizer=optimizer,
-        scheduler=scheduler,
-        projectpaths=projectpaths_for_run,
-        checkpointinterval=checkpointinterval,
-        resumeepoch=resumeepoch,
-        resumestep=resumestep,
-    )
+    try:
+        _runtrain(
+            epochs=epochs,
+            accelerator=accelerator,
+            model=model,
+            trainloader=trainloader,
+            valloader=valloader,
+            useembeddings=useembeddings,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            projectpaths=projectpaths_for_run,
+            wandbrun=wandbrun,
+            checkpointinterval=checkpointinterval,
+            resumeepoch=resumeepoch,
+            resumestep=resumestep,
+        )
+    finally:
+        wandbrun.finish()
 
 
 def convertcpfromsafetensors(checkpointpath: str, savepath: str) -> None:

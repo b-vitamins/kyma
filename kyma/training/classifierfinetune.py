@@ -25,6 +25,7 @@ from kyma.model import KymaClassifier
 from kyma.training.engine import LossTracker, lrstring, savecheckpoint
 from kyma.training.optim import buildadamw, buildlinearscheduler
 from kyma.training.project import createprojectlogger, createprojectpaths
+from kyma.utils.wandb import WandbRun, createwandbrun, defaultwandbname
 
 DEFAULT_LR = 1e-5
 DEFAULT_END_RATIO = 0.1
@@ -235,6 +236,7 @@ def _train(
     tagtoid: dict[str, int],
     scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     projectpaths: ProjectPaths | None,
+    wandbrun: WandbRun,
 ) -> list[dict[str, Any]]:
     logger = get_logger(__name__)
     lossfn = nn.CrossEntropyLoss()
@@ -297,6 +299,17 @@ def _train(
                     f"lr={lrstring(optimizer, scheduler)}, "
                     f"loss={round(float(loss.item()), 4)}, "
                     f"trailing={round(trailing, 4)}"
+                )
+                globalstep = epoch * len(trainloader) + step
+                wandbrun.log(
+                    {
+                        "train/loss": float(loss.item()),
+                        "train/trailing_loss": trailing,
+                        "train/average_loss": average,
+                        "train/lr": float(optimizer.param_groups[-1]["lr"]),
+                        "train/epoch": epoch,
+                    },
+                    step=globalstep,
                 )
         return sum(tracker.values) / len(tracker.values)
 
@@ -371,6 +384,15 @@ def _train(
             macrof1,
         )
         logger.info("Class metrics: %s", classmetrics)
+        wandbrun.log(
+            {
+                "val/accuracy": accuracy,
+                "val/macro_f1": macrof1,
+                "val/epoch": epoch,
+            },
+            step=(epoch + 1) * len(trainloader),
+            force=True,
+        )
         return {
             "accuracy": accuracy,
             "macro_f1": macrof1,
@@ -435,6 +457,30 @@ def train(
             "modelconfig.class_size does not match the requested category contract."
         )
     model = KymaClassifier(modelconfig)
+    wandbrun = (
+        createwandbrun(
+            projectpaths=projectpaths,
+            jobtype="classifier-finetune",
+            name=defaultwandbname(projectpaths, prefix="classifier"),
+            group=metadatacategory,
+            tags=["classifier", metadatacategory, modelname],
+            runconfig={
+                "model_name": modelname,
+                "metadata_category": metadatacategory,
+                "dataset_size": datasetsize,
+                "apply_aug": applyaug,
+                "train_data": traindatapath,
+                "val_data": valdatapath,
+                "num_workers": numworkers,
+                "num_epochs": numepochs,
+                "batch_size": batchsize,
+                "grad_acc_steps": gradaccsteps,
+                **modelconfig.__dict__,
+            },
+        )
+        if projectpaths is not None
+        else WandbRun(run=None)
+    )
 
     if checkpointpath is not None:
         logger.info("Loading checkpoint from %s", checkpointpath)
@@ -466,17 +512,21 @@ def train(
         scheduler,
     )
 
-    epochmetrics = _train(
-        numepochs=numepochs,
-        accelerator=accelerator,
-        model=model,
-        trainloader=trainloader,
-        valloader=valloader,
-        optimizer=optimizer,
-        tagtoid=tagtoid,
-        scheduler=scheduler,
-        projectpaths=projectpaths,
-    )
+    try:
+        epochmetrics = _train(
+            numepochs=numepochs,
+            accelerator=accelerator,
+            model=model,
+            trainloader=trainloader,
+            valloader=valloader,
+            optimizer=optimizer,
+            tagtoid=tagtoid,
+            scheduler=scheduler,
+            projectpaths=projectpaths,
+            wandbrun=wandbrun,
+        )
+    finally:
+        wandbrun.finish()
     if projectpaths is None:
         return
 

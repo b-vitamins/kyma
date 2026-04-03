@@ -61,5 +61,8 @@ Language-model size presets:
   upstream `slinoss` README.
 - `kyma` intentionally targets the PyTorch/CUDA path only. It does not ship an
   MLX backend.
+- Training jobs automatically pick up `WANDB_*` and `KYMA_WANDB*` keys from the
+  repo-local `.env` when present. On production machines, prefer `~/.netrc`
+  for auth and keep the repo-local `.env` limited to non-secret defaults.
 - The remote helpers are optional and remain generic operator tooling. See
   `scripts/README.md` for their usage contract.

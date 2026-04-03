@@ -29,6 +29,10 @@ main codebase.
 
 Copy `.env.example` to `.env` and fill in the machines you want to manage.
 
+The same `.env` file may also carry repo-local training defaults such as
+`WANDB_PROJECT`, `WANDB_ENTITY`, and optional `KYMA_WANDB*` settings. Those
+keys are consumed by the training code, not by the remote helper scripts.
+
 The scripts read:
 
 - `KD_REMOTE_MACHINES`
