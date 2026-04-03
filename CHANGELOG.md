@@ -18,3 +18,5 @@ All notable changes to this project will be documented in this file.
   `kyma-l`.
 - Added env-driven W&B observability hooks for Kyma training runs, with
   repo-local `.env` defaults and `~/.netrc` auth support.
+- Added optional `torch.compile` controls to the pretraining entrypoint through
+  Accelerate's TorchDynamo plugin surface.

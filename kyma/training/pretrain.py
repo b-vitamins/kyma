@@ -22,6 +22,7 @@ from kyma.config.loaders import loadmodelschema
 from kyma.config.schemas import ProjectPaths
 from kyma.data import PretrainingDataset, gettokenizer
 from kyma.model import KymaLM
+from kyma.training.dynamo import CompileConfig, addcompileargs
 from kyma.training.engine import LossTracker, gatheredloss, lrstring, savecheckpoint
 from kyma.training.optim import buildadamw, buildlinearscheduler
 from kyma.training.project import createprojectlogger, createprojectpaths
@@ -324,6 +325,7 @@ def train(
     batchsize: int,
     gradaccsteps: int,
     epochs: int,
+    compileconfig: CompileConfig | None = None,
     checkpointpath: str | None = None,
     checkpointinterval: int | None = None,
     projectdir: str | None = None,
@@ -335,15 +337,18 @@ def train(
     ensuredir(valdatapath, label="validation dataset directory")
 
     tokenizername = gettokenizername(traindatapaths, valdatapath)
+    compileconfig = compileconfig or CompileConfig()
     accelerator = accelerate.Accelerator(
         project_dir=projectdir,
         gradient_accumulation_steps=gradaccsteps,
+        dynamo_plugin=compileconfig.createplugin(),
     )
     projectpaths = (
         createprojectpaths(projectdir) if accelerator.is_main_process else None
     )
     if projectpaths is not None:
-        createprojectlogger(projectpaths, name=__name__)
+        logger = createprojectlogger(projectpaths, name=__name__)
+        logger.info("Compile config: %s", compileconfig.asdict())
 
     model = _buildmodel(modelname, tokenizername, useembeddings=useembeddings)
     wandbrun = (
@@ -363,6 +368,7 @@ def train(
                 "grad_acc_steps": gradaccsteps,
                 "epochs": epochs,
                 "checkpoint_interval": checkpointinterval,
+                **compileconfig.asdict(),
                 **model.config.__dict__,
             },
         )
@@ -434,6 +440,7 @@ def resumetrain(
     batchsize: int,
     gradaccsteps: int,
     epochs: int,
+    compileconfig: CompileConfig | None = None,
     checkpointdir: str,
     resumeepoch: int,
     resumestep: int,
@@ -441,15 +448,18 @@ def resumetrain(
     projectdir: str | None = None,
 ) -> None:
     tokenizername = gettokenizername(traindatapaths, valdatapath)
+    compileconfig = compileconfig or CompileConfig()
     accelerator = accelerate.Accelerator(
         project_dir=projectdir,
         gradient_accumulation_steps=gradaccsteps,
+        dynamo_plugin=compileconfig.createplugin(),
     )
     projectpaths = (
         createprojectpaths(projectdir) if accelerator.is_main_process else None
     )
     if projectpaths is not None:
-        createprojectlogger(projectpaths, name=__name__)
+        logger = createprojectlogger(projectpaths, name=__name__)
+        logger.info("Compile config: %s", compileconfig.asdict())
 
     model = _buildmodel(modelname, tokenizername, useembeddings=useembeddings)
     wandbrun = (
@@ -471,6 +481,7 @@ def resumetrain(
                 "resume_epoch": resumeepoch,
                 "resume_step": resumestep,
                 "checkpoint_interval": checkpointinterval,
+                **compileconfig.asdict(),
                 **model.config.__dict__,
             },
         )
@@ -560,6 +571,7 @@ def parseresumeargs():
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--pdir", required=False)
     parser.add_argument("--spc", type=int, required=False)
+    addcompileargs(parser)
     return parser.parse_args(sys.argv[2:])
 
 
@@ -576,6 +588,7 @@ def parsetrainargs():
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--pdir", required=False)
     parser.add_argument("--spc", type=int, required=False)
+    addcompileargs(parser)
     return parser.parse_args(sys.argv[2:])
 
 
@@ -596,6 +609,13 @@ def main() -> None:
             batchsize=trainargs.bs,
             gradaccsteps=trainargs.grad_acc_steps,
             epochs=trainargs.epochs,
+            compileconfig=CompileConfig(
+                backend=trainargs.compile_backend,
+                mode=trainargs.compile_mode,
+                fullgraph=trainargs.compile_fullgraph,
+                dynamic=trainargs.compile_dynamic,
+                regional=trainargs.compile_regional,
+            ),
             checkpointpath=trainargs.cp_path,
             checkpointinterval=trainargs.spc,
             projectdir=trainargs.pdir,
@@ -611,6 +631,13 @@ def main() -> None:
             batchsize=resumeargs.bs,
             gradaccsteps=resumeargs.grad_acc_steps,
             epochs=resumeargs.epochs,
+            compileconfig=CompileConfig(
+                backend=resumeargs.compile_backend,
+                mode=resumeargs.compile_mode,
+                fullgraph=resumeargs.compile_fullgraph,
+                dynamic=resumeargs.compile_dynamic,
+                regional=resumeargs.compile_regional,
+            ),
             checkpointdir=resumeargs.cp_dir,
             resumeepoch=resumeargs.r_epoch,
             resumestep=resumeargs.r_step,
