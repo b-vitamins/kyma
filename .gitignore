@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.venv/
+venv/
+
+# Local configuration
+.env
+.env.local
+.remote-known-hosts
+
+# Local downloads and scratch space
+remote-downloads/
+artifacts/
+logs/
+tmp/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Editors
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: repo-full-gate
+        name: repo-full-gate
+        entry: bash scripts/pre-commit.sh
+        language: system
+        pass_filenames: false
