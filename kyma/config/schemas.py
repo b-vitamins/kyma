@@ -8,12 +8,28 @@ from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
-class DatasetHeader:
-    """Header stored on the first line of Kyma dataset shard files."""
+class PackedShard:
+    """Metadata describing one reusable packed-shard file."""
 
+    name: str
+    sequence_count: int
+    loss_token_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class PackedDatasetManifest:
+    """Manifest stored alongside reusable packed pretraining shards."""
+
+    format_version: int
     tokenizer_name: str
     tokenizer_config: dict[str, Any]
     max_seq_len: int
+    shard_token_capacity: int
+    separate_sequences: bool
+    embedding_size: int | None
+    sequence_count: int
+    loss_token_count: int
+    shards: list[PackedShard]
 
 
 @dataclass(frozen=True, slots=True)

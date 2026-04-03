@@ -1,13 +1,16 @@
-"""Language-model pretraining entrypoints."""
+"""Step-based language-model pretraining entrypoints."""
 
 from __future__ import annotations
 
 import argparse
 import csv
+import json
 import logging
+import math
 import random
 import sys
 from contextlib import ExitStack
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import accelerate
@@ -15,75 +18,122 @@ import torch
 from accelerate.logging import get_logger
 from torch import nn
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 
 from kyma.compat.checkpointio import convertaccelerate, loadstate
 from kyma.config.loaders import loadmodelschema
-from kyma.config.schemas import ProjectPaths
-from kyma.data import PretrainingDataset, gettokenizer
+from kyma.config.schemas import PackedDatasetManifest, ProjectPaths
+from kyma.data import PackedDataset, gettokenizer
 from kyma.model import KymaLM
 from kyma.training.dynamo import CompileConfig, addcompileargs
-from kyma.training.engine import LossTracker, gatheredloss, lrstring, savecheckpoint
+from kyma.training.engine import LossTracker, gatheredloss, lrstring
 from kyma.training.optim import buildadamw, buildlinearscheduler
 from kyma.training.project import createprojectlogger, createprojectpaths
 from kyma.utils.validation import ensuredir
 from kyma.utils.wandb import WandbRun, createwandbrun, defaultwandbname
 
+STATE_FILENAME = "pretrain_state.json"
+SAMPLER_SEED = 42
+
+
+@dataclass(frozen=True, slots=True)
+class ResumeState:
+    """Resume metadata for the step-based pretraining loop."""
+
+    step: int
+    tokens_seen: int
+    pass_index: int
+    batches_processed_in_pass: int
+
+
+def loadmanifestpair(
+    traindatapaths: list[str], valdatapath: str
+) -> tuple[PackedDatasetManifest, PackedDatasetManifest]:
+    trainmanifest = PackedDataset.loadmanifest(traindatapaths[0])
+    valmanifest = PackedDataset.loadmanifest(valdatapath)
+    if trainmanifest.tokenizer_name != valmanifest.tokenizer_name:
+        raise ValueError("Training and validation datasets use different tokenizers.")
+    return trainmanifest, valmanifest
+
 
 def gettokenizername(traindatapaths: list[str], valdatapath: str) -> str:
-    trainconfig = PretrainingDataset.getconfigfrompath(traindatapaths[0])
-    valconfig = PretrainingDataset.getconfigfrompath(valdatapath)
-    if trainconfig["tokenizer_name"] != valconfig["tokenizer_name"]:
-        raise ValueError("Training and validation datasets use different tokenizers.")
-    return str(trainconfig["tokenizer_name"])
+    trainmanifest, _ = loadmanifestpair(traindatapaths, valdatapath)
+    return trainmanifest.tokenizer_name
 
 
-def getdataloaders(
+def getdatasets(
     *,
     traindatadirs: list[str],
     valdatadir: str,
     tokenizer,
-    batchsize: int,
-    numworkers: int,
     useembeddings: bool,
-    initepoch: int | None = None,
     applyaug: bool = True,
-) -> tuple[DataLoader, DataLoader]:
-    traindataset = PretrainingDataset(traindatadirs, tokenizer)
-    valdataset = PretrainingDataset(valdatadir, tokenizer)
-    if initepoch is not None:
-        traindataset.initepoch(initepoch)
+) -> tuple[PackedDataset, PackedDataset]:
+    traindataset = PackedDataset(traindatadirs, tokenizer)
+    valdataset = PackedDataset(valdatadir, tokenizer)
     if applyaug:
         traindataset.settransform(tokenizer.export_data_aug())
-
-    trainloader = DataLoader(
-        traindataset,
-        batch_size=batchsize,
-        num_workers=numworkers,
-        shuffle=True,
-    )
-    valloader = DataLoader(
-        valdataset,
-        batch_size=batchsize,
-        num_workers=numworkers,
-        shuffle=False,
-    )
 
     if useembeddings:
         _, _, _, trainemb = traindataset[0]
         _, _, _, valemb = valdataset[0]
         if trainemb.numel() == 0 or valemb.numel() == 0:
             raise ValueError(
-                "Embedding-conditioned training requires embedding datasets."
+                "Embedding-conditioned training requires embedding-aware shards."
             )
+    return traindataset, valdataset
+
+
+def builddataloaders(
+    *,
+    accelerator: accelerate.Accelerator,
+    traindataset: PackedDataset,
+    valdataset: PackedDataset,
+    batchsize: int,
+    numworkers: int,
+) -> tuple[DataLoader, DataLoader]:
+    pinmemory = torch.cuda.is_available()
+    persistentworkers = numworkers > 0
+    trainsampler = DistributedSampler(
+        traindataset,
+        num_replicas=accelerator.num_processes,
+        rank=accelerator.process_index,
+        shuffle=True,
+        seed=SAMPLER_SEED,
+        drop_last=False,
+    )
+    valsampler = DistributedSampler(
+        valdataset,
+        num_replicas=accelerator.num_processes,
+        rank=accelerator.process_index,
+        shuffle=False,
+        seed=SAMPLER_SEED,
+        drop_last=False,
+    )
+    trainloader = DataLoader(
+        traindataset,
+        batch_size=batchsize,
+        sampler=trainsampler,
+        num_workers=numworkers,
+        pin_memory=pinmemory,
+        persistent_workers=persistentworkers,
+    )
+    valloader = DataLoader(
+        valdataset,
+        batch_size=batchsize,
+        sampler=valsampler,
+        num_workers=numworkers,
+        pin_memory=pinmemory,
+        persistent_workers=persistentworkers,
+    )
     return trainloader, valloader
 
 
 def buildoptim(
     *,
     model: nn.Module,
-    numepochs: int,
-    stepsperepoch: int,
+    maxsteps: int,
     lr: float = 3e-4,
     endratio: float = 0.1,
     warmupsteps: int = 200,
@@ -91,7 +141,7 @@ def buildoptim(
     optimizer = buildadamw(model, lr=lr)
     scheduler = buildlinearscheduler(
         optimizer,
-        totalsteps=numepochs * stepsperepoch,
+        totalsteps=maxsteps,
         warmupsteps=warmupsteps,
         endratio=endratio,
     )
@@ -122,210 +172,99 @@ def tokenlossmap(
     return flatloss.reshape_as(tgt)
 
 
-def _runtrain(
-    *,
-    epochs: int,
-    accelerator: accelerate.Accelerator,
-    model: KymaLM,
-    trainloader: DataLoader,
-    valloader: DataLoader,
-    useembeddings: bool,
-    optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler.LRScheduler | None,
-    projectpaths: ProjectPaths,
-    wandbrun: WandbRun,
-    checkpointinterval: int | None = None,
-    resumeepoch: int | None = None,
-    resumestep: int | None = None,
-) -> None:
-    logger = get_logger(__name__)
-    losstrackerwindow = 200
-    padid = trainloader.dataset.tokenizer.pad_id
-    lossfn = nn.CrossEntropyLoss(ignore_index=padid, reduction="none")
-    filestack = ExitStack()
-
-    if accelerator.is_main_process:
-        losscsv = filestack.enter_context(
-            (projectpaths.root / "loss.csv").open(
-                "w",
-                newline="",
-                encoding="utf-8",
-            )
-        )
-        losswriter = csv.writer(losscsv)
-        losswriter.writerow(["epoch", "step", "loss"])
-        epochcsv = filestack.enter_context(
-            (projectpaths.root / "epoch.csv").open(
-                "w",
-                newline="",
-                encoding="utf-8",
-            )
-        )
-        epochwriter = csv.writer(epochcsv)
-        epochwriter.writerow(["epoch", "avg_train_loss", "avg_val_loss"])
+def _gatheredint(accelerator: accelerate.Accelerator, value: int | torch.Tensor) -> int:
+    if not isinstance(value, torch.Tensor):
+        value = torch.tensor([value], device=accelerator.device, dtype=torch.int64)
     else:
-        losscsv = None
-        losswriter = None
-        epochcsv = None
-        epochwriter = None
+        value = value.to(device=accelerator.device, dtype=torch.int64).reshape(1)
+    return int(accelerator.gather(value).sum().item())
 
-    def trainloop(dataloader: DataLoader, epoch: int, *, resumestep: int = 0) -> float:
-        tracker = LossTracker(trailingwindow=losstrackerwindow)
-        loss = torch.tensor([0.0], device=accelerator.device)
-        model.train()
-        for stepindex, batch in (
-            pbar := tqdm(
-                enumerate(dataloader),
-                total=len(dataloader) + resumestep,
-                initial=resumestep,
-                leave=False,
-            )
-        ):
-            pbar.set_postfix_str(
-                f"lr={lrstring(optimizer, scheduler)}, "
-                f"loss={round(float(loss.item()), 4)}"
-            )
-            with accelerator.accumulate(model):
-                step = stepindex + resumestep + 1
-                src, tgt, mask, emb = batch
-                usecond = useembeddings and emb.numel() > 0 and random.random() > 0.5
-                logits = model(src=src, emb=emb) if usecond else model(src)
-                if usecond:
-                    tgt = tgt[:, :-1]
-                    mask = mask[:, :-1]
 
-                loss = tokenlossmap(lossfn, logits, tgt)
-                if mask.sum() == 0:
-                    loss = (loss * 0).sum()
-                else:
-                    loss = loss * mask
-                    loss = loss[loss != 0.0].mean()
+def _setpass(loader: DataLoader, passindex: int) -> None:
+    sampler = getattr(loader, "sampler", None)
+    if sampler is not None and hasattr(sampler, "set_epoch"):
+        sampler.set_epoch(passindex)
 
-                trailing, average = tracker.update(gatheredloss(accelerator, loss))
-                logger.debug(
-                    (
-                        "EPOCH %s STEP %s: lr=%s loss=%.4f "
-                        "trailing_loss=%.4f average_loss=%.4f"
-                    ),
-                    epoch,
-                    step,
-                    lrstring(optimizer, scheduler),
-                    float(loss.item()),
-                    trailing,
-                    average,
-                )
-                if accelerator.is_main_process and losswriter is not None:
-                    losswriter.writerow([epoch, step, float(loss.item())])
-                    if losscsv is not None:
-                        losscsv.flush()
 
-                accelerator.backward(loss)
-                optimizer.step()
-                optimizer.zero_grad()
-                if scheduler is not None:
-                    scheduler.step()
+def _movebatch(batch, device: torch.device):
+    return tuple(tensor.to(device, non_blocking=True) for tensor in batch)
 
-                if checkpointinterval is not None and step % checkpointinterval == 0:
-                    savecheckpoint(
-                        accelerator,
-                        projectpaths,
-                        epoch=epoch,
-                        step=step,
-                    )
 
-                globalstep = epoch * len(trainloader) + step
-                wandbrun.log(
-                    {
-                        "train/loss": float(loss.item()),
-                        "train/trailing_loss": trailing,
-                        "train/average_loss": average,
-                        "train/lr": float(optimizer.param_groups[-1]["lr"]),
-                        "train/epoch": epoch,
-                    },
-                    step=globalstep,
-                )
-                pbar.set_postfix_str(
-                    f"lr={lrstring(optimizer, scheduler)}, "
-                    f"loss={round(float(loss.item()), 4)}, "
-                    f"trailing={round(trailing, 4)}"
-                )
-        return sum(tracker.values) / len(tracker.values)
+def _statepath(checkpointdir: Path) -> Path:
+    return checkpointdir / STATE_FILENAME
 
-    @torch.no_grad()
-    def valloop(dataloader: DataLoader, epoch: int) -> float:
-        tracker = LossTracker(trailingwindow=losstrackerwindow)
-        model.eval()
-        for batch in tqdm(dataloader, total=len(dataloader), leave=False):
-            src, tgt, mask, emb = batch
-            usecond = useembeddings and emb.numel() > 0 and random.random() > 0.5
-            logits = model(src=src, emb=emb) if usecond else model(src)
-            if usecond:
-                tgt = tgt[:, :-1]
-                mask = mask[:, :-1]
-            loss = tokenlossmap(lossfn, logits, tgt)
-            if mask.sum() == 0:
-                loss = (loss * 0).sum()
-            else:
-                loss = loss * mask
-                loss = loss[loss != 0.0].mean()
-            tracker.update(gatheredloss(accelerator, loss))
-        average = sum(tracker.values) / len(tracker.values)
-        logger.info("EPOCH %s: validation average_loss=%.4f", epoch, average)
-        wandbrun.log(
-            {
-                "val/loss": average,
-                "val/epoch": epoch,
-            },
-            step=(epoch + 1) * len(trainloader),
-            force=True,
-        )
-        return average
 
-    startepoch = 0 if resumeepoch is None else resumeepoch + 1
-    if resumestep is not None and resumeepoch is not None:
-        skipped = accelerator.skip_first_batches(trainloader, num_batches=resumestep)
-        avgtrain = trainloop(skipped, resumeepoch, resumestep=resumestep)
-        avgval = valloop(valloader, resumeepoch)
-        if accelerator.is_main_process and epochwriter is not None:
-            epochwriter.writerow([resumeepoch, avgtrain, avgval])
-            if epochcsv is not None:
-                epochcsv.flush()
-        wandbrun.log(
-            {
-                "epoch/train_loss": avgtrain,
-                "epoch/val_loss": avgval,
-                "epoch/index": resumeepoch,
-            },
-            step=(resumeepoch + 1) * len(trainloader),
-            force=True,
-        )
+def _normalizeresume(
+    *, passindex: int, batchesprocessed: int, batchesperpass: int
+) -> tuple[int, int]:
+    if batchesprocessed >= batchesperpass:
+        return passindex + 1, 0
+    return passindex, batchesprocessed
 
-    for epoch in range(startepoch, startepoch + epochs):
-        trainloader.dataset.initepoch(epoch)
-        avgtrain = trainloop(trainloader, epoch)
-        avgval = valloop(valloader, epoch)
-        if accelerator.is_main_process and epochwriter is not None:
-            epochwriter.writerow([epoch, avgtrain, avgval])
-            if epochcsv is not None:
-                epochcsv.flush()
-        wandbrun.log(
-            {
-                "epoch/train_loss": avgtrain,
-                "epoch/val_loss": avgval,
-                "epoch/index": epoch,
-            },
-            step=(epoch + 1) * len(trainloader),
-            force=True,
-        )
-        savecheckpoint(
-            accelerator,
-            projectpaths,
-            epoch=epoch + 1,
-            step=0,
-        )
 
-    logging.shutdown()
-    filestack.close()
+def saveresumestate(
+    accelerator: accelerate.Accelerator,
+    projectpaths: ProjectPaths,
+    *,
+    step: int,
+    tokensseen: int,
+    passindex: int,
+    batchesprocessedinpass: int,
+    batchesperpass: int,
+) -> None:
+    if not accelerator.is_main_process:
+        return
+    resumepass, resumebatch = _normalizeresume(
+        passindex=passindex,
+        batchesprocessed=batchesprocessedinpass,
+        batchesperpass=batchesperpass,
+    )
+    checkpointdir = projectpaths.checkpoints / f"step{step}"
+    accelerator.save_state(str(checkpointdir))
+    payload = ResumeState(
+        step=step,
+        tokens_seen=tokensseen,
+        pass_index=resumepass,
+        batches_processed_in_pass=resumebatch,
+    )
+    with _statepath(checkpointdir).open("w", encoding="utf-8") as handle:
+        json.dump(asdict(payload), handle, indent=2)
+
+
+def loadresumestate(checkpointdir: str | Path) -> ResumeState:
+    statepath = _statepath(Path(checkpointdir))
+    if not statepath.is_file():
+        raise FileNotFoundError(f"Missing pretraining resume metadata: {statepath}")
+    with statepath.open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+    return ResumeState(
+        step=int(payload["step"]),
+        tokens_seen=int(payload["tokens_seen"]),
+        pass_index=int(payload["pass_index"]),
+        batches_processed_in_pass=int(payload["batches_processed_in_pass"]),
+    )
+
+
+def resolveprojectpaths(
+    projectdir: str | None, *, checkpointdir: str | None = None
+) -> ProjectPaths:
+    if checkpointdir is None:
+        return createprojectpaths(projectdir)
+
+    if projectdir is None:
+        root = Path(checkpointdir).resolve().parents[1]
+    else:
+        root = Path(projectdir).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+
+    checkpoints = root / "checkpoints"
+    checkpoints.mkdir(exist_ok=True)
+    return ProjectPaths(
+        root=root,
+        checkpoints=checkpoints,
+        logs=(root / "logs.txt").resolve(),
+        metrics=(root / "metrics").resolve(),
+    )
 
 
 def _buildmodel(modelname: str, tokenizername: str, *, useembeddings: bool) -> KymaLM:
@@ -339,7 +278,257 @@ def _buildmodel(modelname: str, tokenizername: str, *, useembeddings: bool) -> K
     return KymaLM(config)
 
 
-def train(
+def _opencsv(
+    filestack: ExitStack,
+    path: Path,
+    header: list[str],
+    *,
+    append: bool,
+) -> tuple[object, object]:
+    mode = "a" if append and path.exists() else "w"
+    handle = filestack.enter_context(path.open(mode, newline="", encoding="utf-8"))
+    writer = csv.writer(handle)
+    if mode == "w":
+        writer.writerow(header)
+    return handle, writer
+
+
+def _runtrain(
+    *,
+    accelerator: accelerate.Accelerator,
+    model: KymaLM,
+    trainloader: DataLoader,
+    valloader: DataLoader,
+    useembeddings: bool,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None,
+    projectpaths: ProjectPaths,
+    wandbrun: WandbRun,
+    maxsteps: int,
+    evalevery: int,
+    saveevery: int | None,
+    resumestate: ResumeState | None,
+) -> None:
+    logger = get_logger(__name__)
+    losstracker = LossTracker(trailingwindow=200)
+    padid = trainloader.dataset.tokenizer.pad_id
+    lossfn = nn.CrossEntropyLoss(ignore_index=padid, reduction="none")
+    filestack = ExitStack()
+
+    appendmode = resumestate is not None
+    if accelerator.is_main_process:
+        losscsv, losswriter = _opencsv(
+            filestack,
+            projectpaths.root / "loss.csv",
+            ["pass", "batch", "step", "tokens_seen", "loss"],
+            append=appendmode,
+        )
+        evalcsv, evalwriter = _opencsv(
+            filestack,
+            projectpaths.root / "eval.csv",
+            ["step", "tokens_seen", "avg_train_loss", "avg_val_loss"],
+            append=appendmode,
+        )
+    else:
+        losscsv = None
+        losswriter = None
+        evalcsv = None
+        evalwriter = None
+
+    optimizer.zero_grad(set_to_none=True)
+    globalstep = 0 if resumestate is None else resumestate.step
+    tokensseen = 0 if resumestate is None else resumestate.tokens_seen
+    passindex = 0 if resumestate is None else resumestate.pass_index
+    startbatch = 0 if resumestate is None else resumestate.batches_processed_in_pass
+    lastsavedstep = globalstep if resumestate is None else 0
+    lastevalstep = globalstep if resumestate is None else 0
+    lasttrainavg = 0.0
+
+    if globalstep >= maxsteps:
+        raise ValueError(
+            "Checkpoint already reached or exceeded the requested max_steps."
+        )
+
+    def evaluateloop(step: int, trainavg: float, tokens: int) -> float:
+        model.eval()
+        totalnumerator = torch.zeros(1, device=accelerator.device)
+        totaltokens = torch.zeros(1, device=accelerator.device, dtype=torch.int64)
+        iterator = valloader
+        if accelerator.is_main_process:
+            iterator = tqdm(valloader, desc=f"Val step {step}", leave=False)
+        with torch.no_grad():
+            for batch in iterator:
+                src, tgt, mask, emb = _movebatch(batch, accelerator.device)
+                usecond = useembeddings and emb.numel() > 0 and random.random() > 0.5
+                logits = model(src=src, emb=emb) if usecond else model(src)
+                if usecond:
+                    tgt = tgt[:, :-1]
+                    mask = mask[:, :-1]
+
+                lossmap = tokenlossmap(lossfn, logits, tgt)
+                totalnumerator += (lossmap * mask).sum()
+                totaltokens += mask.sum().to(dtype=torch.int64).reshape(1)
+
+        numerator = accelerator.gather(totalnumerator).sum()
+        tokencount = accelerator.gather(totaltokens).sum()
+        avgloss = (
+            0.0
+            if int(tokencount.item()) == 0
+            else float((numerator / tokencount).item())
+        )
+        logger.info(
+            "STEP %s: validation average_loss=%.4f tokens_seen=%s",
+            step,
+            avgloss,
+            tokens,
+        )
+        if accelerator.is_main_process and evalwriter is not None:
+            evalwriter.writerow([step, tokens, trainavg, avgloss])
+            if evalcsv is not None:
+                evalcsv.flush()
+        wandbrun.log(
+            {
+                "val/loss": avgloss,
+                "train/avg_loss": trainavg,
+                "train/tokens_seen": tokens,
+                "train/step": step,
+            },
+            step=step,
+            force=True,
+        )
+        model.train()
+        return avgloss
+
+    batchesperpass = len(trainloader)
+    while globalstep < maxsteps:
+        _setpass(trainloader, passindex)
+        iterator: DataLoader | object = trainloader
+        if startbatch > 0:
+            iterator = accelerator.skip_first_batches(trainloader, startbatch)
+        if accelerator.is_main_process:
+            iterator = tqdm(
+                iterator,
+                total=len(trainloader),
+                initial=startbatch,
+                desc=f"Pass {passindex}",
+                leave=False,
+            )
+
+        batchinpass = startbatch
+        pendinglosses: list[float] = []
+        pendingtokens = 0
+        model.train()
+        for batch in iterator:
+            batchinpass += 1
+            src, tgt, mask, emb = _movebatch(batch, accelerator.device)
+            usecond = useembeddings and emb.numel() > 0 and random.random() > 0.5
+            with accelerator.accumulate(model):
+                logits = model(src=src, emb=emb) if usecond else model(src)
+                if usecond:
+                    tgt = tgt[:, :-1]
+                    mask = mask[:, :-1]
+
+                loss = tokenlossmap(lossfn, logits, tgt)
+                if mask.sum() == 0:
+                    loss = (loss * 0).sum()
+                else:
+                    loss = (loss * mask).sum() / mask.sum()
+
+                pendinglosses.append(gatheredloss(accelerator, loss))
+                pendingtokens += _gatheredint(accelerator, mask.sum())
+                accelerator.backward(loss)
+
+                if not accelerator.sync_gradients:
+                    continue
+
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                if scheduler is not None:
+                    scheduler.step()
+
+                globalstep += 1
+                tokensseen += pendingtokens
+                steploss = sum(pendinglosses) / len(pendinglosses)
+                trailing, average = losstracker.update(steploss)
+                lasttrainavg = average
+                logger.info(
+                    (
+                        "STEP %s/%s: lr=%s loss=%.4f trailing_loss=%.4f "
+                        "average_loss=%.4f tokens_seen=%s pass=%s batch=%s"
+                    ),
+                    globalstep,
+                    maxsteps,
+                    lrstring(optimizer, scheduler),
+                    steploss,
+                    trailing,
+                    average,
+                    tokensseen,
+                    passindex,
+                    batchinpass,
+                )
+                if accelerator.is_main_process and losswriter is not None:
+                    losswriter.writerow(
+                        [passindex, batchinpass, globalstep, tokensseen, steploss]
+                    )
+                    if losscsv is not None:
+                        losscsv.flush()
+
+                wandbrun.log(
+                    {
+                        "train/loss": steploss,
+                        "train/trailing_loss": trailing,
+                        "train/avg_loss": average,
+                        "train/tokens_seen": tokensseen,
+                        "train/pass": passindex,
+                        "train/batch_in_pass": batchinpass,
+                    },
+                    step=globalstep,
+                )
+                pendinglosses.clear()
+                pendingtokens = 0
+
+                if saveevery is not None and globalstep % saveevery == 0:
+                    saveresumestate(
+                        accelerator,
+                        projectpaths,
+                        step=globalstep,
+                        tokensseen=tokensseen,
+                        passindex=passindex,
+                        batchesprocessedinpass=batchinpass,
+                        batchesperpass=batchesperpass,
+                    )
+                    lastsavedstep = globalstep
+
+                if globalstep % evalevery == 0:
+                    evaluateloop(globalstep, lasttrainavg, tokensseen)
+                    lastevalstep = globalstep
+
+                if globalstep >= maxsteps:
+                    break
+
+        if globalstep >= maxsteps:
+            break
+        passindex += 1
+        startbatch = 0
+
+    if lastevalstep != globalstep:
+        evaluateloop(globalstep, lasttrainavg, tokensseen)
+    if lastsavedstep != globalstep:
+        saveresumestate(
+            accelerator,
+            projectpaths,
+            step=globalstep,
+            tokensseen=tokensseen,
+            passindex=passindex,
+            batchesprocessedinpass=batchinpass,
+            batchesperpass=batchesperpass,
+        )
+
+    logging.shutdown()
+    filestack.close()
+
+
+def _runjob(
     *,
     modelname: str,
     traindatapaths: list[str],
@@ -348,13 +537,18 @@ def train(
     numworkers: int,
     batchsize: int,
     gradaccsteps: int,
-    epochs: int,
-    compileconfig: CompileConfig | None = None,
-    checkpointpath: str | None = None,
-    checkpointinterval: int | None = None,
-    projectdir: str | None = None,
+    maxsteps: int,
+    evalevery: int | None,
+    saveevery: int | None,
+    lr: float,
+    warmupsteps: int,
+    endratio: float,
+    compileconfig: CompileConfig | None,
+    checkpointpath: str | None,
+    checkpointdir: str | None,
+    projectdir: str | None,
 ) -> None:
-    if epochs <= 0 or batchsize <= 0 or numworkers < 0:
+    if maxsteps <= 0 or batchsize <= 0 or gradaccsteps <= 0 or numworkers < 0:
         raise ValueError("Invalid training configuration.")
     for path in traindatapaths:
         ensuredir(path, label="training dataset directory")
@@ -367,68 +561,52 @@ def train(
         gradient_accumulation_steps=gradaccsteps,
         dynamo_plugin=compileconfig.createplugin(),
     )
+    resumestate = loadresumestate(checkpointdir) if checkpointdir is not None else None
     projectpaths = (
-        createprojectpaths(projectdir) if accelerator.is_main_process else None
+        resolveprojectpaths(projectdir, checkpointdir=checkpointdir)
+        if accelerator.is_main_process
+        else None
     )
     if projectpaths is not None:
         logger = createprojectlogger(projectpaths, name=__name__)
         logger.info("Compile config: %s", compileconfig.asdict())
 
     model = _buildmodel(modelname, tokenizername, useembeddings=useembeddings)
-    wandbrun = (
-        createwandbrun(
-            projectpaths=projectpaths,
-            jobtype="pretrain",
-            name=defaultwandbname(projectpaths, prefix="pretrain"),
-            group=modelname,
-            tags=["pretrain", modelname],
-            runconfig={
-                "model_name": modelname,
-                "train_data": traindatapaths,
-                "val_data": valdatapath,
-                "use_embeddings": useembeddings,
-                "num_workers": numworkers,
-                "batch_size": batchsize,
-                "grad_acc_steps": gradaccsteps,
-                "epochs": epochs,
-                "checkpoint_interval": checkpointinterval,
-                **compileconfig.asdict(),
-                **model.config.__dict__,
-            },
-        )
-        if projectpaths is not None
-        else WandbRun(run=None)
-    )
     if checkpointpath is not None:
         model.load_state_dict(loadstate(checkpointpath), strict=False)
 
     tokenizer = gettokenizer(tokenizername)
-    trainloader, valloader = getdataloaders(
+    traindataset, valdataset = getdatasets(
         traindatadirs=traindatapaths,
         valdatadir=valdatapath,
         tokenizer=tokenizer,
-        batchsize=batchsize,
-        numworkers=numworkers,
         useembeddings=useembeddings,
         applyaug=True,
     )
-    if trainloader.dataset.max_seq_len != model.max_seq_len:
+    if traindataset.max_seq_len != model.max_seq_len:
         raise ValueError("Training dataset max_seq_len does not match the model.")
-    if valloader.dataset.max_seq_len != model.max_seq_len:
+    if valdataset.max_seq_len != model.max_seq_len:
         raise ValueError("Validation dataset max_seq_len does not match the model.")
 
+    trainloader, valloader = builddataloaders(
+        accelerator=accelerator,
+        traindataset=traindataset,
+        valdataset=valdataset,
+        batchsize=batchsize,
+        numworkers=numworkers,
+    )
+    stepsperpass = max(1, math.ceil(len(trainloader) / gradaccsteps))
+    evalevery = stepsperpass if evalevery is None else evalevery
     optimizer, scheduler = buildoptim(
         model=model,
-        numepochs=epochs,
-        stepsperepoch=max(1, len(trainloader) // max(1, gradaccsteps)),
+        maxsteps=maxsteps,
+        lr=lr,
+        endratio=endratio,
+        warmupsteps=warmupsteps,
     )
-    model, trainloader, valloader, optimizer, scheduler = accelerator.prepare(
-        model,
-        trainloader,
-        valloader,
-        optimizer,
-        scheduler,
-    )
+    model, optimizer, scheduler = accelerator.prepare(model, optimizer, scheduler)
+    if checkpointdir is not None:
+        accelerator.load_state(checkpointdir)
 
     projectpaths_for_run = projectpaths or ProjectPaths(
         root=Path(projectdir or "experiments"),
@@ -436,9 +614,45 @@ def train(
         logs=Path(projectdir or "experiments") / "logs.txt",
         metrics=Path(projectdir or "experiments") / "metrics",
     )
+    wandbrun = (
+        createwandbrun(
+            projectpaths=projectpaths_for_run,
+            jobtype="pretrain-resume" if checkpointdir is not None else "pretrain",
+            name=defaultwandbname(projectpaths_for_run, prefix="pretrain"),
+            group=modelname,
+            tags=[
+                "pretrain",
+                *(["resume"] if checkpointdir is not None else []),
+                modelname,
+            ],
+            runconfig={
+                "model_name": modelname,
+                "train_data": traindatapaths,
+                "val_data": valdatapath,
+                "use_embeddings": useembeddings,
+                "num_workers": numworkers,
+                "batch_size_per_process": batchsize,
+                "grad_acc_steps": gradaccsteps,
+                "max_steps": maxsteps,
+                "steps_per_pass": stepsperpass,
+                "eval_every": evalevery,
+                "save_every": saveevery,
+                "lr": lr,
+                "warmup_steps": warmupsteps,
+                "end_ratio": endratio,
+                "train_sequence_count": len(traindataset),
+                "train_loss_tokens_per_pass": traindataset.loss_token_count,
+                "resume_from": checkpointdir,
+                **compileconfig.asdict(),
+                **asdict(model.config),
+            },
+        )
+        if projectpaths is not None
+        else WandbRun(run=None)
+    )
+
     try:
         _runtrain(
-            epochs=epochs,
             accelerator=accelerator,
             model=model,
             trainloader=trainloader,
@@ -448,10 +662,55 @@ def train(
             scheduler=scheduler,
             projectpaths=projectpaths_for_run,
             wandbrun=wandbrun,
-            checkpointinterval=checkpointinterval,
+            maxsteps=maxsteps,
+            evalevery=evalevery,
+            saveevery=saveevery,
+            resumestate=resumestate,
         )
     finally:
+        traindataset.close()
+        valdataset.close()
         wandbrun.finish()
+
+
+def train(
+    *,
+    modelname: str,
+    traindatapaths: list[str],
+    valdatapath: str,
+    useembeddings: bool,
+    numworkers: int,
+    batchsize: int,
+    gradaccsteps: int,
+    maxsteps: int,
+    evalevery: int | None,
+    saveevery: int | None,
+    lr: float,
+    warmupsteps: int,
+    endratio: float,
+    compileconfig: CompileConfig | None = None,
+    checkpointpath: str | None = None,
+    projectdir: str | None = None,
+) -> None:
+    _runjob(
+        modelname=modelname,
+        traindatapaths=traindatapaths,
+        valdatapath=valdatapath,
+        useembeddings=useembeddings,
+        numworkers=numworkers,
+        batchsize=batchsize,
+        gradaccsteps=gradaccsteps,
+        maxsteps=maxsteps,
+        evalevery=evalevery,
+        saveevery=saveevery,
+        lr=lr,
+        warmupsteps=warmupsteps,
+        endratio=endratio,
+        compileconfig=compileconfig,
+        checkpointpath=checkpointpath,
+        checkpointdir=None,
+        projectdir=projectdir,
+    )
 
 
 def resumetrain(
@@ -463,103 +722,35 @@ def resumetrain(
     numworkers: int,
     batchsize: int,
     gradaccsteps: int,
-    epochs: int,
+    maxsteps: int,
+    evalevery: int | None,
+    saveevery: int | None,
+    lr: float,
+    warmupsteps: int,
+    endratio: float,
     compileconfig: CompileConfig | None = None,
     checkpointdir: str,
-    resumeepoch: int,
-    resumestep: int,
-    checkpointinterval: int | None = None,
     projectdir: str | None = None,
 ) -> None:
-    tokenizername = gettokenizername(traindatapaths, valdatapath)
-    compileconfig = compileconfig or CompileConfig()
-    accelerator = accelerate.Accelerator(
-        project_dir=projectdir,
-        gradient_accumulation_steps=gradaccsteps,
-        dynamo_plugin=compileconfig.createplugin(),
-    )
-    projectpaths = (
-        createprojectpaths(projectdir) if accelerator.is_main_process else None
-    )
-    if projectpaths is not None:
-        logger = createprojectlogger(projectpaths, name=__name__)
-        logger.info("Compile config: %s", compileconfig.asdict())
-
-    model = _buildmodel(modelname, tokenizername, useembeddings=useembeddings)
-    wandbrun = (
-        createwandbrun(
-            projectpaths=projectpaths,
-            jobtype="pretrain-resume",
-            name=defaultwandbname(projectpaths, prefix="pretrain"),
-            group=modelname,
-            tags=["pretrain", "resume", modelname],
-            runconfig={
-                "model_name": modelname,
-                "train_data": traindatapaths,
-                "val_data": valdatapath,
-                "use_embeddings": useembeddings,
-                "num_workers": numworkers,
-                "batch_size": batchsize,
-                "grad_acc_steps": gradaccsteps,
-                "epochs": epochs,
-                "resume_epoch": resumeepoch,
-                "resume_step": resumestep,
-                "checkpoint_interval": checkpointinterval,
-                **compileconfig.asdict(),
-                **model.config.__dict__,
-            },
-        )
-        if projectpaths is not None
-        else WandbRun(run=None)
-    )
-    tokenizer = gettokenizer(tokenizername)
-    trainloader, valloader = getdataloaders(
-        traindatadirs=traindatapaths,
-        valdatadir=valdatapath,
-        tokenizer=tokenizer,
-        batchsize=batchsize,
-        numworkers=numworkers,
+    _runjob(
+        modelname=modelname,
+        traindatapaths=traindatapaths,
+        valdatapath=valdatapath,
         useembeddings=useembeddings,
-        initepoch=resumeepoch,
-        applyaug=True,
+        numworkers=numworkers,
+        batchsize=batchsize,
+        gradaccsteps=gradaccsteps,
+        maxsteps=maxsteps,
+        evalevery=evalevery,
+        saveevery=saveevery,
+        lr=lr,
+        warmupsteps=warmupsteps,
+        endratio=endratio,
+        compileconfig=compileconfig,
+        checkpointpath=None,
+        checkpointdir=checkpointdir,
+        projectdir=projectdir,
     )
-    optimizer, scheduler = buildoptim(
-        model=model,
-        numepochs=epochs,
-        stepsperepoch=max(1, len(trainloader) // max(1, gradaccsteps)),
-    )
-    model, trainloader, valloader, optimizer, scheduler = accelerator.prepare(
-        model,
-        trainloader,
-        valloader,
-        optimizer,
-        scheduler,
-    )
-    accelerator.load_state(checkpointdir)
-    projectpaths_for_run = projectpaths or ProjectPaths(
-        root=Path(projectdir or "experiments"),
-        checkpoints=Path(projectdir or "experiments") / "checkpoints",
-        logs=Path(projectdir or "experiments") / "logs.txt",
-        metrics=Path(projectdir or "experiments") / "metrics",
-    )
-    try:
-        _runtrain(
-            epochs=epochs,
-            accelerator=accelerator,
-            model=model,
-            trainloader=trainloader,
-            valloader=valloader,
-            useembeddings=useembeddings,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            projectpaths=projectpaths_for_run,
-            wandbrun=wandbrun,
-            checkpointinterval=checkpointinterval,
-            resumeepoch=resumeepoch,
-            resumestep=resumestep,
-        )
-    finally:
-        wandbrun.finish()
 
 
 def convertcpfromsafetensors(checkpointpath: str, savepath: str) -> None:
@@ -580,39 +771,35 @@ def convertcpfromaccelerate(
     )
 
 
-def parseresumeargs():
-    parser = argparse.ArgumentParser(prog="python -m kyma.training.pretrain resume")
+def _addcommonargs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("model")
     parser.add_argument("--train_data", nargs="+", required=True)
     parser.add_argument("--val_data", required=True)
-    parser.add_argument("--cp_dir", required=True)
     parser.add_argument("--use_embeddings", action="store_true")
-    parser.add_argument("--r_step", type=int, required=True)
-    parser.add_argument("--r_epoch", type=int, required=True)
-    parser.add_argument("--epochs", type=int, required=True)
+    parser.add_argument("--max_steps", type=int, required=True)
+    parser.add_argument("--eval_every", type=int)
+    parser.add_argument("--save_every", type=int)
+    parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--warmup_steps", type=int, default=200)
+    parser.add_argument("--end_ratio", type=float, default=0.1)
     parser.add_argument("--bs", type=int, default=32)
     parser.add_argument("--grad_acc_steps", type=int, default=1)
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--pdir", required=False)
-    parser.add_argument("--spc", type=int, required=False)
+    parser.add_argument("--pdir")
     addcompileargs(parser)
+
+
+def parseresumeargs():
+    parser = argparse.ArgumentParser(prog="python -m kyma.training.pretrain resume")
+    _addcommonargs(parser)
+    parser.add_argument("--cp_dir", required=True)
     return parser.parse_args(sys.argv[2:])
 
 
 def parsetrainargs():
     parser = argparse.ArgumentParser(prog="python -m kyma.training.pretrain train")
-    parser.add_argument("model")
-    parser.add_argument("--train_data", nargs="+", required=True)
-    parser.add_argument("--val_data", required=True)
+    _addcommonargs(parser)
     parser.add_argument("--cp_path", default=None)
-    parser.add_argument("--use_embeddings", action="store_true")
-    parser.add_argument("--epochs", type=int, required=True)
-    parser.add_argument("--bs", type=int, default=32)
-    parser.add_argument("--grad_acc_steps", type=int, default=1)
-    parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--pdir", required=False)
-    parser.add_argument("--spc", type=int, required=False)
-    addcompileargs(parser)
     return parser.parse_args(sys.argv[2:])
 
 
@@ -632,7 +819,12 @@ def main() -> None:
             numworkers=trainargs.workers,
             batchsize=trainargs.bs,
             gradaccsteps=trainargs.grad_acc_steps,
-            epochs=trainargs.epochs,
+            maxsteps=trainargs.max_steps,
+            evalevery=trainargs.eval_every,
+            saveevery=trainargs.save_every,
+            lr=trainargs.lr,
+            warmupsteps=trainargs.warmup_steps,
+            endratio=trainargs.end_ratio,
             compileconfig=CompileConfig(
                 backend=trainargs.compile_backend,
                 mode=trainargs.compile_mode,
@@ -641,7 +833,6 @@ def main() -> None:
                 regional=trainargs.compile_regional,
             ),
             checkpointpath=trainargs.cp_path,
-            checkpointinterval=trainargs.spc,
             projectdir=trainargs.pdir,
         )
     else:
@@ -654,7 +845,12 @@ def main() -> None:
             numworkers=resumeargs.workers,
             batchsize=resumeargs.bs,
             gradaccsteps=resumeargs.grad_acc_steps,
-            epochs=resumeargs.epochs,
+            maxsteps=resumeargs.max_steps,
+            evalevery=resumeargs.eval_every,
+            saveevery=resumeargs.save_every,
+            lr=resumeargs.lr,
+            warmupsteps=resumeargs.warmup_steps,
+            endratio=resumeargs.end_ratio,
             compileconfig=CompileConfig(
                 backend=resumeargs.compile_backend,
                 mode=resumeargs.compile_mode,
@@ -663,8 +859,9 @@ def main() -> None:
                 regional=resumeargs.compile_regional,
             ),
             checkpointdir=resumeargs.cp_dir,
-            resumeepoch=resumeargs.r_epoch,
-            resumestep=resumeargs.r_step,
-            checkpointinterval=resumeargs.spc,
             projectdir=resumeargs.pdir,
         )
+
+
+if __name__ == "__main__":
+    main()

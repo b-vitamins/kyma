@@ -17,7 +17,7 @@ from kyma.compat.ariacontracts import (
 from kyma.compat.checkpointio import loadstate
 from kyma.config.loaders import loadmodelschema
 from kyma.data.mididataset import MidiDataset
-from kyma.data.pretrainingdataset import PretrainingDataset
+from kyma.data.packeddataset import PackedDataset
 from kyma.data.tokenization import gettokenizer
 from kyma.inference.prompting import getinferenceprompt
 from kyma.inference.sampling import samplebatch, samplebatchcfg
@@ -74,13 +74,13 @@ def _parsemididatasetargs():
     return parser.parse_args(sys.argv[2:])
 
 
-def _parsepretraindatasetargs():
-    parser = argparse.ArgumentParser(prog="kyma pretrain-dataset")
+def _parsepackdatasetargs():
+    parser = argparse.ArgumentParser(prog="kyma pack-dataset")
     parser.add_argument("--load_path", required=True)
     parser.add_argument("--save_dir", required=True)
     parser.add_argument("--tokenizer_name", choices=["abs", "rel"], required=True)
     parser.add_argument("--seq_len", type=int, default=4096)
-    parser.add_argument("--num_epochs", type=int, default=1)
+    parser.add_argument("--shard_tokens", type=int, default=33_554_432)
     parser.add_argument("--sep_sequences", action="store_true")
     parser.add_argument("--embedding_dataset_path", required=False)
     return parser.parse_args(sys.argv[2:])
@@ -208,7 +208,7 @@ def buildmididataset(args) -> None:
         )
 
 
-def buildpretrainingdataset(args) -> None:
+def buildpackeddataset(args) -> None:
     tokenizer = gettokenizer(args.tokenizer_name)
     if args.embedding_dataset_path is not None:
         with open(args.embedding_dataset_path, encoding="utf-8") as handle:
@@ -219,11 +219,11 @@ def buildpretrainingdataset(args) -> None:
     else:
         fileembeddings = None
 
-    PretrainingDataset.build(
+    PackedDataset.build(
         tokenizer=tokenizer,
         savedir=args.save_dir,
         max_seq_len=args.seq_len,
-        numepochs=args.num_epochs,
+        shard_tokens=args.shard_tokens,
         mididatasetpath=args.load_path,
         separatesequences=args.sep_sequences,
         fileembeddings=fileembeddings,
@@ -238,7 +238,7 @@ def main() -> None:
             "generate",
             "conditioned-generate",
             "midi-dataset",
-            "pretrain-dataset",
+            "pack-dataset",
         ),
     )
     args = parser.parse_args(sys.argv[1:2])
@@ -248,8 +248,8 @@ def main() -> None:
         conditionedgenerate(_parseconditionedgenerateargs())
     elif args.command == "midi-dataset":
         buildmididataset(_parsemididatasetargs())
-    elif args.command == "pretrain-dataset":
-        buildpretrainingdataset(_parsepretraindatasetargs())
+    elif args.command == "pack-dataset":
+        buildpackeddataset(_parsepackdatasetargs())
 
 
 if __name__ == "__main__":

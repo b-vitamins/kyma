@@ -44,7 +44,7 @@ Kyma preserves the main Aria-style command surfaces on the PyTorch/CUDA path:
 kyma generate --backend torch_cuda ...
 kyma conditioned-generate --backend torch_cuda ...
 kyma midi-dataset ...
-kyma pretrain-dataset ...
+kyma pack-dataset ...
 ```
 
 The realtime continuation path lives in `demo/demotorch.py`.
@@ -61,6 +61,9 @@ Language-model size presets:
   upstream `slinoss` README.
 - `kyma` intentionally targets the PyTorch/CUDA path only. It does not ship an
   MLX backend.
+- Pretraining data is packed once into reusable shard sets with a `manifest.json`
+  plus `shard-*.jsonl` files, then trained by step count against those stable
+  shards.
 - Training jobs automatically pick up `WANDB_*` and `KYMA_WANDB*` keys from the
   repo-local `.env` when present. On production machines, prefer `~/.netrc`
   for auth and keep the repo-local `.env` limited to non-secret defaults.

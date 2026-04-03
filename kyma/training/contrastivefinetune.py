@@ -8,6 +8,7 @@ import json
 import mmap
 import random
 from contextlib import ExitStack
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, cast
 
@@ -413,7 +414,7 @@ def train(
                 "num_epochs": numepochs,
                 "batch_size": batchsize,
                 "grad_acc_steps": gradaccsteps,
-                **modelconfig.__dict__,
+                **asdict(modelconfig),
             },
         )
         if projectpaths is not None

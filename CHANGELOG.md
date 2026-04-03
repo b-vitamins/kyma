@@ -26,4 +26,7 @@ All notable changes to this project will be documented in this file.
   objective while avoiding the broken BF16 CUDA `nll_loss2d_backward` route at
   large batch shapes.
 - Fixed pretraining shard header serialization so dataset packing works with
-  the slotted `DatasetHeader` schema on real runs.
+  the slotted schema serialization on real runs.
+- Replaced the epoch-indexed pretraining pack format with reusable packed shard
+  manifests and switched LM pretraining control to step-based runs over stable
+  shard sets.

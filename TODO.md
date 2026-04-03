@@ -9,3 +9,4 @@
 - [x] Track experiment scaffolding in git while keeping runtime outputs ignored.
 - [x] Fix the pretraining LM token loss to avoid the unstable BF16 CUDA 3D CE backward path.
 - [x] Fix pretraining shard header serialization so packed-dataset builds complete on real runs.
+- [x] Replace epoch-based pretraining packs with reusable shard manifests and step-based training control.
