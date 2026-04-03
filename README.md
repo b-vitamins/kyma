@@ -49,6 +49,12 @@ kyma pretrain-dataset ...
 
 The realtime continuation path lives in `demo/demotorch.py`.
 
+Language-model size presets:
+
+- `kyma-s`
+- `kyma-m`
+- `kyma-l`
+
 ## Notes
 
 - `kyma` consumes `slinoss` through its release wheel, as recommended by the

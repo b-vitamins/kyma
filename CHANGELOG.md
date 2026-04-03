@@ -14,3 +14,5 @@ All notable changes to this project will be documented in this file.
   PyTorch realtime continuation demo.
 - Added compatibility, unit, integration, and repository-contract tests for the
   initial milestone series.
+- Added first-class language-model preset names: `kyma-s`, `kyma-m`, and
+  `kyma-l`.

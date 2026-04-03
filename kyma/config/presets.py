@@ -5,7 +5,10 @@ from __future__ import annotations
 from kyma.compat.ariacontracts import CATEGORY_TAGS
 
 MODEL_PRESETS = {
-    "lm": "medium",
+    "small": "kyma-s",
+    "medium": "kyma-m",
+    "large": "kyma-l",
+    "lm": "kyma-l",
     "embedding": "medium-emb",
 }
 

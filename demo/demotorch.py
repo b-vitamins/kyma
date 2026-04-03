@@ -13,6 +13,7 @@ import mido
 from ariautils.tokenizer import AbsTokenizer
 from mido.midifiles.units import second2tick
 
+from kyma.compat.ariacontracts import DEFAULT_MODEL_PRESET
 from kyma.compat.checkpointio import loadstate
 from kyma.config.loaders import loadmodelschema
 from kyma.inference.prompting import getinferenceprompt
@@ -72,7 +73,7 @@ def parseargs():
 
 def loadmodel(checkpoint: str) -> KymaLM:
     tokenizer = AbsTokenizer()
-    config = loadmodelschema("medium")
+    config = loadmodelschema(DEFAULT_MODEL_PRESET)
     config.setvocabsize(tokenizer.vocab_size)
     model = KymaLM(config)
     model.load_state_dict(loadstate(checkpoint), strict=False)
