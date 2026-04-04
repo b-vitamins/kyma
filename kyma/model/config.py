@@ -23,6 +23,16 @@ class ModelConfig:
     d_conv: int = 4
     chunk_size: int = 128
 
+    def __post_init__(self) -> None:
+        if self.d_model % self.n_heads != 0:
+            raise ValueError(
+                f"d_model={self.d_model} must be divisible by n_heads={self.n_heads}."
+            )
+        if self.d_head % 2 != 0:
+            raise ValueError(
+                f"d_head={self.d_head} must be even so RoPE can rotate head pairs."
+            )
+
     @property
     def d_head(self) -> int:
         return self.d_model // self.n_heads

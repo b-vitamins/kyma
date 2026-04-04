@@ -50,7 +50,7 @@ def test_createwandbrun_noops_when_disabled(monkeypatch, tmp_path: Path) -> None
         projectpaths=projectpaths,
         jobtype="pretrain",
         name="test-run",
-        group="kyma-s",
+        group="kyma-base",
         tags=["pretrain"],
         runconfig={"epochs": 1},
     )
@@ -103,7 +103,7 @@ def test_createwandbrun_noops_when_init_fails(monkeypatch, tmp_path: Path) -> No
         projectpaths=projectpaths,
         jobtype="pretrain",
         name="test-run",
-        group="kyma-s",
+        group="kyma-base",
         tags=["pretrain"],
         runconfig={"epochs": 1},
     )

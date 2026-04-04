@@ -51,6 +51,6 @@ CATEGORY_TAGS: dict[str, dict[str, int]] = {
     },
 }
 
-DEFAULT_MODEL_PRESET = "kyma-l"
-DEFAULT_EMBEDDING_MODEL_PRESET = "medium-emb"
+DEFAULT_MODEL_PRESET = "kyma-base"
+DEFAULT_EMBEDDING_MODEL_PRESET = "kyma-base-emb"
 SUPPORTED_BACKENDS = ("torch_cuda",)

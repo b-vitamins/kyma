@@ -10,14 +10,16 @@ from torch.nn import functional as F
 
 from kyma.model.config import ModelConfig
 from kyma.model.heads import SwiGLU
+from kyma.model.rope import applyroperaw
 
 
 class KymaBlock(nn.Module):
     """A pre-norm residual block with a SLinOSS mixer and SwiGLU MLP."""
 
-    def __init__(self, config: ModelConfig) -> None:
+    def __init__(self, config: ModelConfig, *, residdropout: float) -> None:
         super().__init__()
-        self.residdropout = float(config.resid_dropout)
+        self.nheads = config.n_heads
+        self.residdropout = float(residdropout)
         self.norm1 = nn.LayerNorm(config.d_model)
         self.mixer = SLinOSSMixer(
             config.d_model,
@@ -26,6 +28,9 @@ class KymaBlock(nn.Module):
             d_head=config.d_head,
             d_conv=config.d_conv,
             chunk_size=config.chunk_size,
+            dt_min=1e-3,
+            dt_init_floor=1e-3,
+            r_min=0.2,
             normalize_bc=True,
         )
         self.norm2 = nn.LayerNorm(config.d_model)
@@ -44,10 +49,15 @@ class KymaBlock(nn.Module):
         self,
         x: torch.Tensor,
         *,
+        freqs_cis: torch.Tensor,
         state: SLinOSSMixerState | None = None,
         returnstate: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, SLinOSSMixerState]:
-        mixed = self.mixer(self.norm1(x), state=state, return_state=returnstate)
+        mixed = self.mixer(
+            applyroperaw(self.norm1(x), freqs_cis, nheads=self.nheads),
+            state=state,
+            return_state=returnstate,
+        )
         nextstate: SLinOSSMixerState | None = None
         if returnstate:
             mixed, nextstate = mixed
@@ -63,7 +73,11 @@ class KymaBlock(nn.Module):
     def decodeoneinplace(
         self,
         x: torch.Tensor,
+        *,
+        freqs_cis: torch.Tensor,
         state: SLinOSSMixerState,
     ) -> torch.Tensor:
-        x = x + self.mixer._step_inplace(self.norm1(x), state)
+        normed = self.norm1(x).unsqueeze(1)
+        normed = applyroperaw(normed, freqs_cis, nheads=self.nheads).squeeze(1)
+        x = x + self.mixer._step_inplace(normed, state)
         return x + self.ff.decodeone(self.norm2(x))

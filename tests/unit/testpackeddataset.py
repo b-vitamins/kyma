@@ -6,6 +6,7 @@ from ariautils.tokenizer import AbsTokenizer
 
 from kyma.data.mididataset import MidiDataset, resolvempworkers
 from kyma.data.packeddataset import PackedDataset
+from kyma.data.transforms import buildpackedaugmentations
 
 
 def _samplemididict() -> MidiDict:
@@ -90,3 +91,18 @@ def testbuildrejects_embeddings_without_separate_sequences(tmp_path: Path) -> No
 def testresolvempworkersrejectsnonpositive() -> None:
     with pytest.raises(ValueError, match="workers must be positive"):
         resolvempworkers(0)
+
+
+def testpackedtempoaugmentationpreservespartialboundaries() -> None:
+    tokenizer = AbsTokenizer()
+    seq = tokenizer.tokenize(_samplemididict())
+    partialprefix = seq[5:19]
+    partialsuffix = seq[23:34]
+    window = partialprefix + seq + partialsuffix
+
+    transform = buildpackedaugmentations(tokenizer)[0]
+    augmented = transform(window)
+
+    assert len(augmented) == len(window)
+    assert augmented[: len(partialprefix)] == partialprefix
+    assert augmented[-len(partialsuffix) :] == partialsuffix

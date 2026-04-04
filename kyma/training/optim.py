@@ -14,14 +14,12 @@ def buildadamw(
     betas: tuple[float, float] = (0.9, 0.95),
     eps: float = 1e-5,
 ) -> torch.optim.Optimizer:
-    usefused = any(parameter.is_cuda for parameter in model.parameters())
     return torch.optim.AdamW(
         model.parameters(),
         lr=lr,
         weight_decay=weightdecay,
         betas=betas,
         eps=eps,
-        fused=usefused,
     )
 
 

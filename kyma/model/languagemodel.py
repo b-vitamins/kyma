@@ -22,7 +22,6 @@ class KymaLM(nn.Module):
         self.max_seq_len = config.max_seq_len
         self.backbone = KymaBackbone(config)
         self.lmhead = nn.Linear(config.d_model, config.vocab_size, bias=False)
-        self.lmhead.weight = self.backbone.tokenembed.weight
         self.embeddingadapter = (
             nn.Linear(config.emb_size, config.d_model, bias=False)
             if config.emb_size is not None
@@ -50,14 +49,23 @@ class KymaLM(nn.Module):
     def forward(
         self, src: torch.Tensor, emb: torch.Tensor | None = None
     ) -> torch.Tensor:
-        hidden = self.backbone(
-            src,
-            prepended=(self._adaptembedding(emb) if emb is not None else None),
-        )
+        if emb is not None:
+            hidden = self.backbone(src, prepended=self._adaptembedding(emb))
+            logits = self.lmhead(hidden)
+            return logits[:, 1:, :]
+
+        dummyloss = 0.0
+        if self.embeddingadapter is not None:
+            dummyinput = torch.zeros(
+                src.size(0),
+                self.embeddingadapter.in_features,
+                device=src.device,
+            )
+            dummyloss = self.embeddingadapter(dummyinput).sum() * 0.0
+
+        hidden = self.backbone(src)
         logits = self.lmhead(hidden)
-        if emb is None:
-            return logits
-        return logits[:, 1:, :]
+        return logits + dummyloss
 
     def prefill(
         self,

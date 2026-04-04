@@ -29,6 +29,7 @@ from kyma.compat.checkpointio import (
 from kyma.config.loaders import loadmodelschema
 from kyma.config.schemas import PackedDatasetManifest, ProjectPaths
 from kyma.data import PackedDataset, gettokenizer
+from kyma.data.transforms import buildpackedaugmentations
 from kyma.model import KymaLM
 from kyma.training.dynamo import CompileConfig, addcompileargs
 from kyma.training.engine import LossTracker, gatheredloss, lrstring
@@ -87,7 +88,7 @@ def getdatasets(
     traindataset = PackedDataset(traindatadirs, tokenizer)
     valdataset = PackedDataset(valdatadir, tokenizer)
     if applyaug:
-        traindataset.settransform(tokenizer.export_data_aug())
+        traindataset.settransform(buildpackedaugmentations(tokenizer))
 
     if useembeddings:
         _, _, _, trainemb = traindataset[0]
@@ -167,7 +168,7 @@ def tokenlossmap(
     logits: torch.Tensor,
     tgt: torch.Tensor,
 ) -> torch.Tensor:
-    """Return per-token LM loss without routing through the 3D CE kernel path."""
+    """Return per-token LM loss through the Aria-style 3D CE path."""
 
     if logits.ndim != 3:
         raise ValueError(
@@ -181,9 +182,7 @@ def tokenlossmap(
             f"{tuple(logits.shape[:2])} and {tuple(tgt.shape)}."
         )
 
-    vocabsize = int(logits.shape[-1])
-    flatloss = lossfn(logits.reshape(-1, vocabsize), tgt.reshape(-1))
-    return flatloss.reshape_as(tgt)
+    return lossfn(logits.transpose(1, 2), tgt)
 
 
 def _gatheredint(accelerator: accelerate.Accelerator, value: int | torch.Tensor) -> int:
@@ -430,8 +429,6 @@ def _runtrain(
             {
                 "val/loss": avgloss,
                 "train/avg_loss": trainavg,
-                "train/tokens_seen": tokens,
-                "train/step": step,
             },
             step=step,
             force=True,
@@ -516,11 +513,7 @@ def _runtrain(
                 wandbrun.log(
                     {
                         "train/loss": steploss,
-                        "train/trailing_loss": trailing,
                         "train/avg_loss": average,
-                        "train/tokens_seen": tokensseen,
-                        "train/pass": passindex,
-                        "train/batch_in_pass": batchinpass,
                     },
                     step=globalstep,
                 )

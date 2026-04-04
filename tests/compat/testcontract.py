@@ -10,13 +10,10 @@ def test_aria_category_contract_is_preserved() -> None:
 
 
 def test_model_presets_stay_loadable() -> None:
-    small = loadmodelschema("kyma-s")
-    medium = loadmodelschema("kyma-m")
-    config = loadmodelconfig("kyma-l")
-    schema = loadmodelschema("kyma-l")
-    assert small.d_model == 512
-    assert medium.d_model == 832
-    assert config["d_model"] == 1536
+    config = loadmodelconfig("kyma-base")
+    schema = loadmodelschema("kyma-base")
+    assert config["d_model"] == 1216
+    assert schema.n_layers == 16
     assert schema.d_head == 64
     assert schema.chunk_size == 128
 

@@ -59,3 +59,25 @@ def test_conditioned_forward_drops_first_position() -> None:
         logits = model(tokens, emb=emb)
 
     assert logits.shape == (2, 6, 128)
+
+
+def test_language_model_defaults_to_untied_rope_surface() -> None:
+    config = ModelConfig(
+        d_model=64,
+        n_heads=1,
+        n_layers=2,
+        ff_mult=2,
+        drop_p=0.0,
+        max_seq_len=32,
+        grad_checkpoint=False,
+        vocab_size=128,
+        d_state=64,
+        expand=1,
+        d_conv=4,
+        chunk_size=8,
+    )
+
+    model = KymaLM(config)
+
+    assert model.lmhead.weight.data_ptr() != model.backbone.tokenembed.weight.data_ptr()
+    assert model.backbone.freqs_cis.shape == (32, 32, 2)

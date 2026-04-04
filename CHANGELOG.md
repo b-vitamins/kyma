@@ -35,3 +35,7 @@ All notable changes to this project will be documented in this file.
 - Added a dedicated pretraining continuation mode that starts a new phase from
   an Accelerate checkpoint with fresh LR scheduling, ancestry metadata, and
   explicit W&B continuation tags.
+- Collapsed the LM preset surface to a single `kyma-base` family, aligned the
+  Kyma default LM/training surface with Aria-style init and loss behavior,
+  replaced learned positions with RoPE, and fixed packed-window augmentation so
+  tempo transforms only touch complete BOS/EOS-bounded sequences.

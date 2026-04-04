@@ -10,6 +10,7 @@ from torch import nn
 
 from kyma.model.blocks import KymaBlock
 from kyma.model.config import ModelConfig
+from kyma.model.rope import precomputefreqscis
 from kyma.model.state import KymaState
 
 
@@ -23,20 +24,28 @@ class KymaBackbone(nn.Module):
 
         self.config = config
         self.tokenembed = nn.Embedding(config.vocab_size, config.d_model)
-        self.posembed = nn.Embedding(config.max_seq_len, config.d_model)
-        self.inputdropout = nn.Dropout(config.drop_p)
-        self.blocks = nn.ModuleList([KymaBlock(config) for _ in range(config.n_layers)])
+        self.register_buffer(
+            "freqs_cis",
+            precomputefreqscis(
+                seqlen=config.max_seq_len,
+                nelem=config.d_head,
+            ),
+            persistent=False,
+        )
+        self.blocks = nn.ModuleList(
+            [
+                KymaBlock(
+                    config,
+                    residdropout=(
+                        0.0
+                        if config.resid_dropout <= 0 or config.n_layers <= 1
+                        else config.resid_dropout * (layerindex / (config.n_layers - 1))
+                    ),
+                )
+                for layerindex in range(config.n_layers)
+            ]
+        )
         self.outnorm = nn.LayerNorm(config.d_model)
-        self.resetparameters()
-
-    def resetparameters(self) -> None:
-        nn.init.normal_(self.tokenembed.weight, mean=0.0, std=0.02)
-        nn.init.normal_(self.posembed.weight, mean=0.0, std=0.01)
-        for module in self.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight)
-                if module.bias is not None:
-                    nn.init.zeros_(module.bias)
 
     def initstate(
         self,
@@ -59,15 +68,13 @@ class KymaBackbone(nn.Module):
             position=0,
         )
 
-    def _positionids(
-        self, length: int, *, start: int, device: torch.device
-    ) -> torch.Tensor:
+    def _positionids(self, length: int, *, start: int) -> slice:
         end = start + length
         if end > self.config.max_seq_len:
             raise ValueError(
                 f"Sequence length {end} exceeds max_seq_len {self.config.max_seq_len}."
             )
-        return torch.arange(start, end, device=device, dtype=torch.long)
+        return slice(start, end)
 
     def forwardembeddings(
         self,
@@ -81,11 +88,12 @@ class KymaBackbone(nn.Module):
                 f"Expected hidden shape (batch, T, {self.config.d_model}), "
                 f"got {tuple(hidden.shape)}."
             )
-        batchsize, timesteps, _ = map(int, hidden.shape)
+        _, timesteps, _ = map(int, hidden.shape)
         start = 0 if state is None else int(state.position)
-        posids = self._positionids(timesteps, start=start, device=hidden.device)
-        hidden = hidden + self.posembed(posids).unsqueeze(0)
-        hidden = self.inputdropout(hidden)
+        rope_cache = cast(torch.Tensor, self.freqs_cis)
+        freqs_cis = rope_cache[self._positionids(timesteps, start=start)].to(
+            device=hidden.device
+        )
 
         if (
             self.config.grad_checkpoint
@@ -94,12 +102,21 @@ class KymaBackbone(nn.Module):
             and not returnstate
         ):
             for block in cast(list[KymaBlock], list(self.blocks)):
+
+                def createcustomforward(module: KymaBlock):
+                    def customforward(*args):
+                        return module(*args)
+
+                    return customforward
+
                 hidden = cast(
                     torch.Tensor,
                     torch.utils.checkpoint.checkpoint(
-                        lambda x, block=block: cast(torch.Tensor, block(x)),  # noqa: B023
+                        createcustomforward(block),
                         hidden,
-                        use_reentrant=False,
+                        freqs_cis,
+                        preserve_rng_state=True,
+                        use_reentrant=True,
                     ),
                 )
             return self.outnorm(hidden)
@@ -110,13 +127,19 @@ class KymaBackbone(nn.Module):
             if returnstate:
                 output = block(
                     hidden,
+                    freqs_cis=freqs_cis,
                     state=layerstate,
                     returnstate=True,
                 )
                 hidden, nextstate = output
                 nextlayers.append(nextstate)
             else:
-                hidden = block(hidden, state=layerstate, returnstate=False)
+                hidden = block(
+                    hidden,
+                    freqs_cis=freqs_cis,
+                    state=layerstate,
+                    returnstate=False,
+                )
 
         hidden = self.outnorm(hidden)
         if not returnstate:
@@ -159,15 +182,17 @@ class KymaBackbone(nn.Module):
                 f"{position} exceeds max_seq_len {self.config.max_seq_len}."
             )
 
-        pos = self.posembed(
-            torch.tensor([position], device=hidden.device, dtype=torch.long)
-        )[0]
-        hidden = hidden + pos
+        rope_cache = cast(torch.Tensor, self.freqs_cis)
+        freqs_cis = rope_cache[position : position + 1].to(device=hidden.device)
         for block, layerstate in zip(
             cast(list[KymaBlock], list(self.blocks)),
             state.layers,
             strict=True,
         ):
-            hidden = block.decodeoneinplace(hidden, layerstate)
+            hidden = block.decodeoneinplace(
+                hidden,
+                freqs_cis=freqs_cis,
+                state=layerstate,
+            )
         state.position += 1
         return self.outnorm(hidden), state

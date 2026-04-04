@@ -49,11 +49,9 @@ kyma pack-dataset ...
 
 The realtime continuation path lives in `demo/demotorch.py`.
 
-Language-model size presets:
+Language-model preset:
 
-- `kyma-s`
-- `kyma-m`
-- `kyma-l`
+- `kyma-base`
 
 ## Notes
 
