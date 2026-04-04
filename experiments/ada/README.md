@@ -1,11 +1,12 @@
 # Ada Pretraining
 
 This directory contains Ada-specific preparation and launch scaffolding for the
-first Kyma pretraining runs.
+parameter-matched Aria-vs-Kyma baseline runs.
 
 ## Scope
 
-- Target models: `kyma-s`, `kyma-m`
+- Target model: `kyma-base`
+- Control model: Aria `medium`
 - Target machine: `ada`
 - Dataset source: `loubb/aria-midi`
 - Dataset subset: `pruned`
@@ -15,14 +16,10 @@ foundation-model pretraining, and notes that Aria itself was pretrained on it.
 
 ## Current Operating Assumptions
 
-- Use GPU `1` by default. GPU `0` is currently occupied by unrelated work.
-- Treat `torch.compile` as experimental on Ada. The default production setting
-  for now is `--compile_backend no`.
 - Use a quarter of Ada's CPU threads for dataset prep by default so pack-time
   tokenization stays fast without saturating the machine or pounding the disk.
-- Use Chinchilla-style token budgets of roughly `20x` model parameters:
-  - `kyma-s`: `1,652,359,040` target tokens
-  - `kyma-m`: `4,823,131,040` target tokens
+- One full Aria-style packed pass at `bs=8` is `69,697` optimizer steps on the
+  current pruned-train shard set.
 
 The exact optimizer-step counts should be derived from the packed train shards,
 not guessed in advance.
@@ -43,12 +40,8 @@ Typical flow on Ada:
 ```
 
 `pack` builds one reusable train shard set and one reusable val shard set,
-backed by `manifest.json` plus `shard-*.jsonl` files. `plan` then reports:
-
-- exact train tokens per corpus pass
-- recommended optimizer steps for `kyma-s` and `kyma-m`
-- approximate corpus-pass counts at the target token budgets
-- rough wall-clock estimates from the measured Ada throughput points
+backed by `manifest.json` plus `shard-*.jsonl` files. `plan` then reports the
+exact train tokens per pass and the corresponding Kyma-base target-step count.
 
 ## Notes
 
@@ -60,3 +53,8 @@ backed by `manifest.json` plus `shard-*.jsonl` files. `plan` then reports:
   responsive while the shard build runs.
 - `fetch` and `extract` are idempotent in the sense that they can be rerun, but
   they do not delete partially prepared data automatically.
+- [`clear-runtime.sh`](/home/b/projects/kyma/experiments/ada/clear-runtime.sh)
+  clears stale Kyma/Aria runtime state on Ada before a fresh baseline launch.
+- [`run-fullpass-match.sh`](/home/b/projects/kyma/experiments/ada/run-fullpass-match.sh)
+  launches the matched Aria `medium` and Kyma `base` runs for one full
+  Aria-style packed pass.

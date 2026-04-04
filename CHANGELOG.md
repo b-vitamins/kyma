@@ -47,6 +47,8 @@ All notable changes to this project will be documented in this file.
   and made LM pretraining request BF16 explicitly through Accelerate.
 - Added Ada-specific experiment scaffolding for dataset prep, token-budget
   planning, and pretraining calibration.
+- Added Ada launch scripts for clearing stale runtime state and starting the
+  matched full-pass Aria/Kyma baseline pair with aligned W&B metrics.
 - Aligned the Ada calibration bench with the flattened token-loss path so large
   BF16 probes measure the real training route without tripping the broken 3D CE
   backward kernel.

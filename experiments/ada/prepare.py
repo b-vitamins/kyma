@@ -1,4 +1,4 @@
-"""Ada-specific orchestration for Kyma pretraining prep."""
+"""Ada-specific orchestration for Kyma dataset prep and launch sizing."""
 
 from __future__ import annotations
 
@@ -24,14 +24,8 @@ from kyma.model import KymaLM
 CHINCHILLA_TOKENS_PER_PARAM = 20
 DEFAULT_SPLIT = 0.995
 DEFAULT_GRAD_ACC_STEPS = 1
-ADA_MICROBATCHES = {
-    "kyma-s": 18,
-    "kyma-m": 12,
-}
-ADA_TOKENS_PER_SECOND = {
-    "kyma-s": 46_008,
-    "kyma-m": 21_672,
-}
+ADA_MICROBATCHES = {"kyma-base": 8}
+ADA_TOKENS_PER_SECOND: dict[str, int] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,7 +94,7 @@ def _targettokens(modelname: str) -> int:
     return _paramcount(modelname) * CHINCHILLA_TOKENS_PER_PARAM
 
 
-def _flatceloss(
+def _aria3dceloss(
     lossfn: torch.nn.CrossEntropyLoss,
     logits: torch.Tensor,
     tgt: torch.Tensor,
@@ -116,7 +110,7 @@ def _flatceloss(
             "Expected logits batch/seq dims to match tgt shape, got "
             f"{tuple(logits.shape[:2])} and {tuple(tgt.shape)}."
         )
-    return lossfn(logits.reshape(-1, int(logits.shape[-1])), tgt.reshape(-1))
+    return lossfn(logits.transpose(1, 2), tgt)
 
 
 def fetch(args) -> None:
@@ -304,7 +298,7 @@ def bench(args) -> None:
                 started = time.perf_counter()
                 with torch.autocast(device_type="cuda", dtype=dtype):
                     logits = target(src)
-                    loss = _flatceloss(lossfn, logits, tgt)
+                    loss = _aria3dceloss(lossfn, logits, tgt)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -360,7 +354,7 @@ def buildparser() -> argparse.ArgumentParser:
     planparser.add_argument(
         "--models",
         nargs="+",
-        default=["kyma-s", "kyma-m"],
+        default=["kyma-base"],
     )
     planparser.add_argument(
         "--tokens_per_param",
@@ -376,7 +370,7 @@ def buildparser() -> argparse.ArgumentParser:
     planparser.add_argument("--gpus", type=int, default=1)
 
     benchparser = subparsers.add_parser("bench")
-    benchparser.add_argument("--model", choices=("kyma-s", "kyma-m"), required=True)
+    benchparser.add_argument("--model", choices=("kyma-base",), required=True)
     benchparser.add_argument("--gpu", type=int, default=0)
     benchparser.add_argument("--compile_backend", default="no")
     benchparser.add_argument("--dtype", choices=("bf16", "fp16"), default="bf16")
