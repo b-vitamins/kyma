@@ -45,6 +45,35 @@ def savestate(state: dict[str, torch.Tensor], savepath: str | Path) -> None:
     torch.save(state, path)
 
 
+def acceleratecheckpointmodelpath(checkpointdir: str | Path, *, index: int = 0) -> Path:
+    from accelerate.utils.constants import MODEL_NAME, SAFE_MODEL_NAME
+
+    root = Path(checkpointdir)
+    suffix = f"_{index}" if index > 0 else ""
+    candidates = [
+        root / f"{SAFE_MODEL_NAME}{suffix}.safetensors",
+        root / f"{MODEL_NAME}{suffix}.bin",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"Could not find Accelerate model weights under {root} for index {index}."
+    )
+
+
+def loadacceleratemodelstate(
+    checkpointdir: str | Path,
+    *,
+    index: int = 0,
+    device: str | torch.device = "cpu",
+) -> dict[str, torch.Tensor]:
+    return loadstate(
+        acceleratecheckpointmodelpath(checkpointdir, index=index),
+        device=device,
+    )
+
+
 def convertaccelerate(
     modelfactory: Callable[[], nn.Module],
     checkpointdir: str | Path,

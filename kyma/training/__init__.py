@@ -1,5 +1,5 @@
 """Training entrypoints and shared engine utilities."""
 
-from kyma.training.pretrain import resumetrain, train
+from kyma.training.pretrain import continuetrain, resumetrain, train
 
-__all__ = ["resumetrain", "train"]
+__all__ = ["continuetrain", "resumetrain", "train"]

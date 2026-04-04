@@ -16,3 +16,15 @@ def test_cli_help_runs() -> None:
         text=True,
     )
     assert "kyma <command>" in result.stdout
+
+
+def test_pretrain_continue_help_runs() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "kyma.training.pretrain", "continue", "--help"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "--cp_dir" in result.stdout
+    assert "--max_steps" in result.stdout

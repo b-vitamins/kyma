@@ -11,3 +11,4 @@
 - [x] Fix pretraining shard header serialization so packed-dataset builds complete on real runs.
 - [x] Replace epoch-based pretraining packs with reusable shard manifests and step-based training control.
 - [x] Add explicit worker controls for MIDI hydration and shard packing on shared machines.
+- [x] Add a dedicated pretraining continuation mode with fresh-schedule phase restarts from saved checkpoints.

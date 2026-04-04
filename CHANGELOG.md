@@ -32,3 +32,6 @@ All notable changes to this project will be documented in this file.
   shard sets.
 - Added explicit worker controls to MIDI hydration and reusable shard packing so
   preprocessing concurrency can be capped cleanly on shared machines.
+- Added a dedicated pretraining continuation mode that starts a new phase from
+  an Accelerate checkpoint with fresh LR scheduling, ancestry metadata, and
+  explicit W&B continuation tags.

@@ -21,7 +21,11 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 
-from kyma.compat.checkpointio import convertaccelerate, loadstate
+from kyma.compat.checkpointio import (
+    convertaccelerate,
+    loadacceleratemodelstate,
+    loadstate,
+)
 from kyma.config.loaders import loadmodelschema
 from kyma.config.schemas import PackedDatasetManifest, ProjectPaths
 from kyma.data import PackedDataset, gettokenizer
@@ -34,6 +38,7 @@ from kyma.utils.validation import ensuredir
 from kyma.utils.wandb import WandbRun, createwandbrun, defaultwandbname
 
 STATE_FILENAME = "pretrain_state.json"
+CONTINUATION_FILENAME = "continuation.json"
 SAMPLER_SEED = 42
 
 
@@ -45,6 +50,15 @@ class ResumeState:
     tokens_seen: int
     pass_index: int
     batches_processed_in_pass: int
+
+
+@dataclass(frozen=True, slots=True)
+class ContinuationState:
+    """Metadata describing a new pretraining phase bootstrapped from a checkpoint."""
+
+    checkpoint_dir: Path
+    source_step: int
+    source_tokens_seen: int
 
 
 def loadmanifestpair(
@@ -194,6 +208,10 @@ def _statepath(checkpointdir: Path) -> Path:
     return checkpointdir / STATE_FILENAME
 
 
+def _continuationpath(projectpaths: ProjectPaths) -> Path:
+    return projectpaths.root / CONTINUATION_FILENAME
+
+
 def _normalizeresume(
     *, passindex: int, batchesprocessed: int, batchesperpass: int
 ) -> tuple[int, int]:
@@ -243,6 +261,28 @@ def loadresumestate(checkpointdir: str | Path) -> ResumeState:
         pass_index=int(payload["pass_index"]),
         batches_processed_in_pass=int(payload["batches_processed_in_pass"]),
     )
+
+
+def loadcontinuationstate(checkpointdir: str | Path) -> ContinuationState:
+    checkpointpath = Path(checkpointdir).resolve()
+    resumestate = loadresumestate(checkpointpath)
+    return ContinuationState(
+        checkpoint_dir=checkpointpath,
+        source_step=resumestate.step,
+        source_tokens_seen=resumestate.tokens_seen,
+    )
+
+
+def savecontinuationstate(
+    projectpaths: ProjectPaths, continuation: ContinuationState
+) -> None:
+    payload = {
+        "checkpoint_dir": str(continuation.checkpoint_dir),
+        "source_step": continuation.source_step,
+        "source_tokens_seen": continuation.source_tokens_seen,
+    }
+    with _continuationpath(projectpaths).open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
 
 
 def resolveprojectpaths(
@@ -546,10 +586,19 @@ def _runjob(
     compileconfig: CompileConfig | None,
     checkpointpath: str | None,
     checkpointdir: str | None,
+    continuation: ContinuationState | None,
     projectdir: str | None,
 ) -> None:
     if maxsteps <= 0 or batchsize <= 0 or gradaccsteps <= 0 or numworkers < 0:
         raise ValueError("Invalid training configuration.")
+    if checkpointdir is not None and continuation is not None:
+        raise ValueError(
+            "Use either checkpointdir for resume or continuation, not both."
+        )
+    if checkpointpath is not None and continuation is not None:
+        raise ValueError(
+            "Continuation bootstraps from checkpointdir state, not cp_path."
+        )
     for path in traindatapaths:
         ensuredir(path, label="training dataset directory")
     ensuredir(valdatapath, label="validation dataset directory")
@@ -570,9 +619,16 @@ def _runjob(
     if projectpaths is not None:
         logger = createprojectlogger(projectpaths, name=__name__)
         logger.info("Compile config: %s", compileconfig.asdict())
+        if continuation is not None:
+            savecontinuationstate(projectpaths, continuation)
 
     model = _buildmodel(modelname, tokenizername, useembeddings=useembeddings)
-    if checkpointpath is not None:
+    if continuation is not None:
+        model.load_state_dict(
+            loadacceleratemodelstate(continuation.checkpoint_dir),
+            strict=False,
+        )
+    elif checkpointpath is not None:
         model.load_state_dict(loadstate(checkpointpath), strict=False)
 
     tokenizer = gettokenizer(tokenizername)
@@ -614,17 +670,33 @@ def _runjob(
         logs=Path(projectdir or "experiments") / "logs.txt",
         metrics=Path(projectdir or "experiments") / "metrics",
     )
+    jobtype = (
+        "pretrain-resume"
+        if checkpointdir is not None
+        else "pretrain-continue"
+        if continuation is not None
+        else "pretrain"
+    )
+    runprefix = (
+        "pretrain-resume"
+        if checkpointdir is not None
+        else "pretrain-continue"
+        if continuation is not None
+        else "pretrain"
+    )
+    runtags = [
+        "pretrain",
+        *(["resume"] if checkpointdir is not None else []),
+        *(["continue"] if continuation is not None else []),
+        modelname,
+    ]
     wandbrun = (
         createwandbrun(
             projectpaths=projectpaths_for_run,
-            jobtype="pretrain-resume" if checkpointdir is not None else "pretrain",
-            name=defaultwandbname(projectpaths_for_run, prefix="pretrain"),
+            jobtype=jobtype,
+            name=defaultwandbname(projectpaths_for_run, prefix=runprefix),
             group=modelname,
-            tags=[
-                "pretrain",
-                *(["resume"] if checkpointdir is not None else []),
-                modelname,
-            ],
+            tags=runtags,
             runconfig={
                 "model_name": modelname,
                 "train_data": traindatapaths,
@@ -643,6 +715,19 @@ def _runjob(
                 "train_sequence_count": len(traindataset),
                 "train_loss_tokens_per_pass": traindataset.loss_token_count,
                 "resume_from": checkpointdir,
+                "continue_from": (
+                    str(continuation.checkpoint_dir)
+                    if continuation is not None
+                    else None
+                ),
+                "continue_from_step": (
+                    continuation.source_step if continuation is not None else None
+                ),
+                "continue_from_tokens_seen": (
+                    continuation.source_tokens_seen
+                    if continuation is not None
+                    else None
+                ),
                 **compileconfig.asdict(),
                 **asdict(model.config),
             },
@@ -709,6 +794,7 @@ def train(
         compileconfig=compileconfig,
         checkpointpath=checkpointpath,
         checkpointdir=None,
+        continuation=None,
         projectdir=projectdir,
     )
 
@@ -749,6 +835,48 @@ def resumetrain(
         compileconfig=compileconfig,
         checkpointpath=None,
         checkpointdir=checkpointdir,
+        continuation=None,
+        projectdir=projectdir,
+    )
+
+
+def continuetrain(
+    *,
+    modelname: str,
+    traindatapaths: list[str],
+    valdatapath: str,
+    useembeddings: bool,
+    numworkers: int,
+    batchsize: int,
+    gradaccsteps: int,
+    maxsteps: int,
+    evalevery: int | None,
+    saveevery: int | None,
+    lr: float,
+    warmupsteps: int,
+    endratio: float,
+    compileconfig: CompileConfig | None = None,
+    checkpointdir: str,
+    projectdir: str | None = None,
+) -> None:
+    _runjob(
+        modelname=modelname,
+        traindatapaths=traindatapaths,
+        valdatapath=valdatapath,
+        useembeddings=useembeddings,
+        numworkers=numworkers,
+        batchsize=batchsize,
+        gradaccsteps=gradaccsteps,
+        maxsteps=maxsteps,
+        evalevery=evalevery,
+        saveevery=saveevery,
+        lr=lr,
+        warmupsteps=warmupsteps,
+        endratio=endratio,
+        compileconfig=compileconfig,
+        checkpointpath=None,
+        checkpointdir=None,
+        continuation=loadcontinuationstate(checkpointdir),
         projectdir=projectdir,
     )
 
@@ -796,6 +924,13 @@ def parseresumeargs():
     return parser.parse_args(sys.argv[2:])
 
 
+def parsecontinueargs():
+    parser = argparse.ArgumentParser(prog="python -m kyma.training.pretrain continue")
+    _addcommonargs(parser)
+    parser.add_argument("--cp_dir", required=True)
+    return parser.parse_args(sys.argv[2:])
+
+
 def parsetrainargs():
     parser = argparse.ArgumentParser(prog="python -m kyma.training.pretrain train")
     _addcommonargs(parser)
@@ -807,7 +942,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         usage="python -m kyma.training.pretrain <command> [<args>]"
     )
-    parser.add_argument("mode", choices=("train", "resume"))
+    parser.add_argument("mode", choices=("train", "resume", "continue"))
     args = parser.parse_args(sys.argv[1:2])
     if args.mode == "train":
         trainargs = parsetrainargs()
@@ -835,7 +970,7 @@ def main() -> None:
             checkpointpath=trainargs.cp_path,
             projectdir=trainargs.pdir,
         )
-    else:
+    elif args.mode == "resume":
         resumeargs = parseresumeargs()
         resumetrain(
             modelname=resumeargs.model,
@@ -860,6 +995,32 @@ def main() -> None:
             ),
             checkpointdir=resumeargs.cp_dir,
             projectdir=resumeargs.pdir,
+        )
+    else:
+        continueargs = parsecontinueargs()
+        continuetrain(
+            modelname=continueargs.model,
+            traindatapaths=continueargs.train_data,
+            valdatapath=continueargs.val_data,
+            useembeddings=continueargs.use_embeddings,
+            numworkers=continueargs.workers,
+            batchsize=continueargs.bs,
+            gradaccsteps=continueargs.grad_acc_steps,
+            maxsteps=continueargs.max_steps,
+            evalevery=continueargs.eval_every,
+            saveevery=continueargs.save_every,
+            lr=continueargs.lr,
+            warmupsteps=continueargs.warmup_steps,
+            endratio=continueargs.end_ratio,
+            compileconfig=CompileConfig(
+                backend=continueargs.compile_backend,
+                mode=continueargs.compile_mode,
+                fullgraph=continueargs.compile_fullgraph,
+                dynamic=continueargs.compile_dynamic,
+                regional=continueargs.compile_regional,
+            ),
+            checkpointdir=continueargs.cp_dir,
+            projectdir=continueargs.pdir,
         )
 
 
