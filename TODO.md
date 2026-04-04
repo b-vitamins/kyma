@@ -13,3 +13,4 @@
 - [x] Add explicit worker controls for MIDI hydration and shard packing on shared machines.
 - [x] Add a dedicated pretraining continuation mode with fresh-schedule phase restarts from saved checkpoints.
 - [x] Align the default Kyma LM surface with the Aria reference, adopt RoPE, and make packed-window augmentation sequence-safe.
+- [x] Fix the RoPE checkpoint path so compiled full-pass Kyma runs work with the Aria-aligned block interface.

@@ -39,3 +39,5 @@ All notable changes to this project will be documented in this file.
   Kyma default LM/training surface with Aria-style init and loss behavior,
   replaced learned positions with RoPE, and fixed packed-window augmentation so
   tempo transforms only touch complete BOS/EOS-bounded sequences.
+- Fixed the RoPE checkpoint wrapper so gradient-checkpointed Kyma blocks pass
+  rotary state correctly during full-pass compiled training.

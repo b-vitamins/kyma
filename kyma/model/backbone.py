@@ -104,8 +104,8 @@ class KymaBackbone(nn.Module):
             for block in cast(list[KymaBlock], list(self.blocks)):
 
                 def createcustomforward(module: KymaBlock):
-                    def customforward(*args):
-                        return module(*args)
+                    def customforward(x: torch.Tensor, freqs: torch.Tensor):
+                        return module(x, freqs_cis=freqs)
 
                     return customforward
 
