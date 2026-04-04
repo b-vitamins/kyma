@@ -14,3 +14,4 @@
 - [x] Add a dedicated pretraining continuation mode with fresh-schedule phase restarts from saved checkpoints.
 - [x] Align the default Kyma LM surface with the Aria reference, adopt RoPE, and make packed-window augmentation sequence-safe.
 - [x] Fix the RoPE checkpoint path so compiled full-pass Kyma runs work with the Aria-aligned block interface.
+- [x] Tighten the default SLinOSS mixer stability floor for Kyma base full-pass training.

@@ -41,3 +41,5 @@ All notable changes to this project will be documented in this file.
   tempo transforms only touch complete BOS/EOS-bounded sequences.
 - Fixed the RoPE checkpoint wrapper so gradient-checkpointed Kyma blocks pass
   rotary state correctly during full-pass compiled training.
+- Tightened the default SLinOSS mixer stability floor by raising `r_min` to
+  `0.5` while keeping the Aria-aligned Kyma base surface otherwise unchanged.
