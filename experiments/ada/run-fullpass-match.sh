@@ -109,7 +109,7 @@ env "${common_env[@]}" \
     --bs "${batch_size}" \
     --workers "${workers}" \
     --pdir "${kyma_run}" \
-    --lr 1e-3 \
+    --lr 3e-4 \
     --compile_backend inductor \
     > "${kyma_run}.launcher.log" 2>&1 &
 echo $! > "${kyma_run}.pid"
