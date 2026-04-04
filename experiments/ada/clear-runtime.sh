@@ -62,7 +62,7 @@ PY
 
 delete_wandb_runs
 
-kill_pattern "${repo_root}.*kyma.training.pretrain"
+kill_pattern "kyma.training.pretrain"
 kill_pattern "${aria_root}.*aria/training/train.py"
 
 find "${kyma_exp_dir}" -mindepth 1 -maxdepth 1 \

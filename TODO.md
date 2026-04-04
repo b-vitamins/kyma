@@ -17,5 +17,6 @@
 - [x] Reallocate the canonical Kyma base family toward recurrent long-context capacity, raise the default mixer `r_min` to `0.8`, and make pretraining request BF16 explicitly.
 - [x] Add Ada-specific dataset and calibration scaffolding for the first `kyma-s` and `kyma-m` runs.
 - [x] Add Ada branch launch tooling for the matched full-pass Aria/Kyma baseline runs.
+- [x] Harden the Ada full-pass launch scripts so reruns clean stale processes and relaunch both baselines reliably.
 - [x] Rework Ada experiment prep around reusable shards, step-based planning, and capped pack concurrency.
 - [x] Align the Ada calibration bench with the flattened LM token-loss path used in pretraining.

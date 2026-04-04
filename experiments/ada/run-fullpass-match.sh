@@ -79,7 +79,7 @@ path.write_text(text)
 PY
 }
 
-mkdir -p "${kyma_run}" "${aria_run}"
+mkdir -p "$(dirname "${kyma_run}")" "$(dirname "${aria_run}")"
 patch_aria_train
 
 common_env=(
@@ -112,7 +112,7 @@ env "${common_env[@]}" \
     --lr 1e-3 \
     --compile_backend inductor \
     > "${kyma_run}.launcher.log" 2>&1 &
-echo $! > "${kyma_run}/pid.txt"
+echo $! > "${kyma_run}.pid"
 
 env "${common_env[@]}" \
   WANDB_NAME="aria-medium-fullpass-${run_stamp}" \
@@ -125,13 +125,13 @@ env "${common_env[@]}" \
     --val_data "${aria_val_dir}" \
     --epochs 1 \
     --max_steps "${steps}" \
-    --steps_per_checkpoint "${save_every}" \
+    --spc "${save_every}" \
     --bs "${batch_size}" \
     --workers "${workers}" \
-    --project_dir "${aria_run}" \
+    --pdir "${aria_run}" \
     --no_compile \
     > "${aria_root}/aria-medium-fullpass.launcher.log" 2>&1 &
-echo $! > "${aria_run}/pid.txt"
+echo $! > "${aria_run}.pid"
 
 echo "steps=${steps}"
 echo "kyma_run=${kyma_run}"
