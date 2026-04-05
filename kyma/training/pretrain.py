@@ -42,6 +42,7 @@ STATE_FILENAME = "pretrain_state.json"
 CONTINUATION_FILENAME = "continuation.json"
 SAMPLER_SEED = 42
 MIXED_PRECISION_CHOICES = ("no", "fp16", "bf16")
+DEFAULT_EVAL_EVERY = 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -914,7 +915,6 @@ def _addcommonargs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--val_data", required=True)
     parser.add_argument("--use_embeddings", action="store_true")
     parser.add_argument("--max_steps", type=int, required=True)
-    parser.add_argument("--eval_every", type=int)
     parser.add_argument("--save_every", type=int)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--warmup_steps", type=int, default=200)
@@ -927,6 +927,7 @@ def _addcommonargs(parser: argparse.ArgumentParser) -> None:
         choices=MIXED_PRECISION_CHOICES,
         default="bf16",
     )
+    parser.add_argument("--eval_every", type=int, default=DEFAULT_EVAL_EVERY)
     parser.add_argument("--pdir")
     addcompileargs(parser)
 

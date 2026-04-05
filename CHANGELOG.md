@@ -46,3 +46,6 @@ All notable changes to this project will be documented in this file.
   `d_state=256` backbone, raised the default SLinOSS mixer `r_min` to `0.8`,
   and made LM pretraining request BF16 explicitly through Accelerate.
 - Updated the pinned SLinOSS release wheel to `v0.4.1`.
+- Defaulted Kyma pretraining CLI launches to validate every `1000` steps so
+  long-run evaluation stays a modest share of wall clock unless explicitly
+  overridden.
