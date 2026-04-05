@@ -45,3 +45,4 @@ All notable changes to this project will be documented in this file.
   long-context capacity with an explicit `1024/16/14`, `ff_mult=2`,
   `d_state=256` backbone, raised the default SLinOSS mixer `r_min` to `0.8`,
   and made LM pretraining request BF16 explicitly through Accelerate.
+- Updated the pinned SLinOSS release wheel to `v0.4.0`.
