@@ -15,7 +15,7 @@ dependencies = [
   "ariautils @ git+https://github.com/EleutherAI/aria-utils.git",
   "jsonlines>=4.0.0",
   "safetensors>=0.5.3",
-  "slinoss[cuda] @ https://github.com/b-vitamins/slinoss/releases/download/v0.4.0/slinoss-0.4.0-cp311-cp311-linux_x86_64.whl",
+  "slinoss[cuda] @ https://github.com/b-vitamins/slinoss/releases/download/v0.4.1/slinoss-0.4.1-cp311-cp311-linux_x86_64.whl",
   "tqdm>=4.67.1",
 ]
 
