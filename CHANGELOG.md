@@ -41,5 +41,7 @@ All notable changes to this project will be documented in this file.
   tempo transforms only touch complete BOS/EOS-bounded sequences.
 - Fixed the RoPE checkpoint wrapper so gradient-checkpointed Kyma blocks pass
   rotary state correctly during full-pass compiled training.
-- Tightened the default SLinOSS mixer stability floor by raising `r_min` to
-  `0.5` while keeping the Aria-aligned Kyma base surface otherwise unchanged.
+- Reallocated the canonical `kyma-base` preset family toward recurrent
+  long-context capacity with an explicit `1024/16/14`, `ff_mult=2`,
+  `d_state=256` backbone, raised the default SLinOSS mixer `r_min` to `0.8`,
+  and made LM pretraining request BF16 explicitly through Accelerate.

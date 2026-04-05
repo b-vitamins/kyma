@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import torch
@@ -10,6 +11,7 @@ from kyma.config.schemas import ProjectPaths
 from kyma.training.pretrain import (
     ContinuationState,
     loadcontinuationstate,
+    parsetrainargs,
     savecontinuationstate,
 )
 
@@ -72,3 +74,25 @@ def test_savecontinuationstate_writes_ancestry_metadata(tmp_path: Path) -> None:
         "source_step": 100,
         "source_tokens_seen": 999999,
     }
+
+
+def test_parsetrainargs_defaults_to_bf16_precision(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "python",
+            "train",
+            "kyma-base",
+            "--train_data",
+            "train-shard",
+            "--val_data",
+            "val-shard",
+            "--max_steps",
+            "1",
+        ],
+    )
+
+    args = parsetrainargs()
+
+    assert args.mixed_precision == "bf16"

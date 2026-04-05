@@ -41,6 +41,7 @@ from kyma.utils.wandb import WandbRun, createwandbrun, defaultwandbname
 STATE_FILENAME = "pretrain_state.json"
 CONTINUATION_FILENAME = "continuation.json"
 SAMPLER_SEED = 42
+MIXED_PRECISION_CHOICES = ("no", "fp16", "bf16")
 
 
 @dataclass(frozen=True, slots=True)
@@ -576,6 +577,7 @@ def _runjob(
     lr: float,
     warmupsteps: int,
     endratio: float,
+    mixedprecision: str,
     compileconfig: CompileConfig | None,
     checkpointpath: str | None,
     checkpointdir: str | None,
@@ -584,6 +586,11 @@ def _runjob(
 ) -> None:
     if maxsteps <= 0 or batchsize <= 0 or gradaccsteps <= 0 or numworkers < 0:
         raise ValueError("Invalid training configuration.")
+    if mixedprecision not in MIXED_PRECISION_CHOICES:
+        raise ValueError(
+            "mixedprecision must be one of "
+            f"{', '.join(MIXED_PRECISION_CHOICES)}. Got {mixedprecision!r}."
+        )
     if checkpointdir is not None and continuation is not None:
         raise ValueError(
             "Use either checkpointdir for resume or continuation, not both."
@@ -601,6 +608,7 @@ def _runjob(
     accelerator = accelerate.Accelerator(
         project_dir=projectdir,
         gradient_accumulation_steps=gradaccsteps,
+        mixed_precision=mixedprecision,
         dynamo_plugin=compileconfig.createplugin(),
     )
     resumestate = loadresumestate(checkpointdir) if checkpointdir is not None else None
@@ -612,6 +620,7 @@ def _runjob(
     if projectpaths is not None:
         logger = createprojectlogger(projectpaths, name=__name__)
         logger.info("Compile config: %s", compileconfig.asdict())
+        logger.info("Accelerate mixed precision: %s", mixedprecision)
         if continuation is not None:
             savecontinuationstate(projectpaths, continuation)
 
@@ -698,6 +707,7 @@ def _runjob(
                 "num_workers": numworkers,
                 "batch_size_per_process": batchsize,
                 "grad_acc_steps": gradaccsteps,
+                "mixed_precision": mixedprecision,
                 "max_steps": maxsteps,
                 "steps_per_pass": stepsperpass,
                 "eval_every": evalevery,
@@ -766,6 +776,7 @@ def train(
     lr: float,
     warmupsteps: int,
     endratio: float,
+    mixedprecision: str = "bf16",
     compileconfig: CompileConfig | None = None,
     checkpointpath: str | None = None,
     projectdir: str | None = None,
@@ -784,6 +795,7 @@ def train(
         lr=lr,
         warmupsteps=warmupsteps,
         endratio=endratio,
+        mixedprecision=mixedprecision,
         compileconfig=compileconfig,
         checkpointpath=checkpointpath,
         checkpointdir=None,
@@ -807,6 +819,7 @@ def resumetrain(
     lr: float,
     warmupsteps: int,
     endratio: float,
+    mixedprecision: str = "bf16",
     compileconfig: CompileConfig | None = None,
     checkpointdir: str,
     projectdir: str | None = None,
@@ -825,6 +838,7 @@ def resumetrain(
         lr=lr,
         warmupsteps=warmupsteps,
         endratio=endratio,
+        mixedprecision=mixedprecision,
         compileconfig=compileconfig,
         checkpointpath=None,
         checkpointdir=checkpointdir,
@@ -848,6 +862,7 @@ def continuetrain(
     lr: float,
     warmupsteps: int,
     endratio: float,
+    mixedprecision: str = "bf16",
     compileconfig: CompileConfig | None = None,
     checkpointdir: str,
     projectdir: str | None = None,
@@ -866,6 +881,7 @@ def continuetrain(
         lr=lr,
         warmupsteps=warmupsteps,
         endratio=endratio,
+        mixedprecision=mixedprecision,
         compileconfig=compileconfig,
         checkpointpath=None,
         checkpointdir=None,
@@ -906,6 +922,11 @@ def _addcommonargs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--bs", type=int, default=32)
     parser.add_argument("--grad_acc_steps", type=int, default=1)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument(
+        "--mixed_precision",
+        choices=MIXED_PRECISION_CHOICES,
+        default="bf16",
+    )
     parser.add_argument("--pdir")
     addcompileargs(parser)
 
@@ -953,6 +974,7 @@ def main() -> None:
             lr=trainargs.lr,
             warmupsteps=trainargs.warmup_steps,
             endratio=trainargs.end_ratio,
+            mixedprecision=trainargs.mixed_precision,
             compileconfig=CompileConfig(
                 backend=trainargs.compile_backend,
                 mode=trainargs.compile_mode,
@@ -979,6 +1001,7 @@ def main() -> None:
             lr=resumeargs.lr,
             warmupsteps=resumeargs.warmup_steps,
             endratio=resumeargs.end_ratio,
+            mixedprecision=resumeargs.mixed_precision,
             compileconfig=CompileConfig(
                 backend=resumeargs.compile_backend,
                 mode=resumeargs.compile_mode,
@@ -1005,6 +1028,7 @@ def main() -> None:
             lr=continueargs.lr,
             warmupsteps=continueargs.warmup_steps,
             endratio=continueargs.end_ratio,
+            mixedprecision=continueargs.mixed_precision,
             compileconfig=CompileConfig(
                 backend=continueargs.compile_backend,
                 mode=continueargs.compile_mode,

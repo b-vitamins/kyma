@@ -30,7 +30,7 @@ class KymaBlock(nn.Module):
             chunk_size=config.chunk_size,
             dt_min=1e-3,
             dt_init_floor=1e-3,
-            r_min=0.5,
+            r_min=0.8,
             normalize_bc=True,
         )
         self.norm2 = nn.LayerNorm(config.d_model)

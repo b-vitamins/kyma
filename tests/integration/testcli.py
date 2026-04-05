@@ -28,3 +28,4 @@ def test_pretrain_continue_help_runs() -> None:
     )
     assert "--cp_dir" in result.stdout
     assert "--max_steps" in result.stdout
+    assert "--mixed_precision" in result.stdout

@@ -12,9 +12,14 @@ def test_aria_category_contract_is_preserved() -> None:
 def test_model_presets_stay_loadable() -> None:
     config = loadmodelconfig("kyma-base")
     schema = loadmodelschema("kyma-base")
-    assert config["d_model"] == 1216
-    assert schema.n_layers == 16
+    assert config["d_model"] == 1024
+    assert config["n_heads"] == 16
+    assert config["n_layers"] == 14
+    assert config["ff_mult"] == 2
+    assert schema.n_layers == 14
     assert schema.d_head == 64
+    assert schema.d_state == 256
+    assert schema.expand == 2
     assert schema.chunk_size == 128
 
 

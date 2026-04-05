@@ -1,11 +1,15 @@
 {
-    "d_model": 1216,
-    "n_heads": 19,
-    "n_layers": 16,
-    "ff_mult": 4,
+    "d_model": 1024,
+    "n_heads": 16,
+    "n_layers": 14,
+    "ff_mult": 2,
     "drop_p": 0.0,
     "max_seq_len": 8192,
     "grad_checkpoint": true,
+    "d_state": 256,
+    "expand": 2,
+    "d_conv": 4,
+    "chunk_size": 128,
     "class_size": 4,
     "resid_dropout": 0.2
 }

@@ -18,7 +18,7 @@ class ModelConfig:
     vocab_size: int | None = None
     class_size: int | None = None
     emb_size: int | None = None
-    d_state: int = 64
+    d_state: int = 256
     expand: int = 2
     d_conv: int = 4
     chunk_size: int = 128
