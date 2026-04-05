@@ -58,3 +58,5 @@ exact train tokens per pass and the corresponding Kyma-base target-step count.
 - [`run-fullpass-match.sh`](/home/b/projects/kyma/experiments/ada/run-fullpass-match.sh)
   launches the matched Aria `medium` and Kyma `base` runs for one full
   Aria-style packed pass.
+- That launcher defaults Kyma evaluation to every `1000` steps because a full
+  Ada validation sweep costs about twelve minutes of wall clock.

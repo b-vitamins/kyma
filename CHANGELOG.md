@@ -54,6 +54,9 @@ All notable changes to this project will be documented in this file.
   launcher uses the patched baseline clone's current CLI flags.
 - Reset the matched Ada full-pass Kyma baseline to Aria's learning rate so the
   paired restart stays stable while preserving the compiled Kyma path.
+- Relaxed the Ada matched full-pass Kyma launcher default from validating every
+  `250` steps to every `1000` steps so long validation sweeps do not dominate
+  wall clock.
 - Aligned the Ada calibration bench with the flattened token-loss path so large
   BF16 probes measure the real training route without tripping the broken 3D CE
   backward kernel.
